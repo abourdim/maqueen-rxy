@@ -22,7 +22,13 @@ SRC = f"{HERE}/maqueen-remote.ts"
 PAD, TITLE = 24, 34          # side padding, and clearance for the header chip
 
 src = open(SRC, encoding="utf-8").read()
-OLD_B64 = re.search(r'const CFG = "([^"]*)"', src).group(1)
+# CFG_EXPERT, not CFG: since levels arrived there are five blobs and `CFG` is
+# a `let` that merely points at one of them. Expert is the full panel, which is
+# what this file reads back to preserve every widget's own properties.
+_m = re.search(r'const CFG_EXPERT = "([^"]*)"', src)
+if not _m:
+    raise SystemExit("  FAILED - no `const CFG_EXPERT` in maqueen-remote.ts")
+OLD_B64 = _m.group(1)
 old = json.loads(base64.b64decode(OLD_B64).decode())
 # Structural widgets are regenerated from scratch every run, so they are not
 # part of the "preserve everything" contract -- otherwise re-running this over
@@ -162,7 +168,7 @@ system = [
     # live in EVERY level -- see gen_levels.py. A Level selector that appeared
     # only in Expert would strand the robot in whatever panel you picked.
     new("level", "select", 1250, 1120, 180, 94, label="Level",
-        options="Beginner,Drive,Distance,Screen,Expert"),
+        options="Beginner,Expert,Drive,Distance,Screen"),
 ]
 
 ZONES = [

@@ -1,3 +1,177 @@
+# Maqueen RXY
+
+A Bluetooth remote for the **DFRobot Maqueen Lite**, driven from a micro:bit.
+Nothing to install, no account, no WiFi.
+
+**The robot owns the layout.** The web app is a renderer: it connects, asks the
+robot for its configuration, and draws whatever comes back. There is nothing to
+set up on the browser side and no per-robot build of the app — the same page
+serves every rxy robot.
+
+## What you need
+
+- BBC micro:bit — **V2 recommended**: the logo-touch face works only there
+- DFRobot **Maqueen Lite** chassis
+- *Optional:* an **SSD1306 128×64 OLED** on the I2C header at `0x3C`
+- Chrome or Edge, on desktop or Android. Safari and iOS cannot do this at all —
+  every iOS browser is WebKit underneath and none implement Web Bluetooth
+
+## Flashing
+
+Two MakeCode extensions are required, and it will not compile without both:
+
+- `pxt-maqueen` — search "maqueen" in the Extensions dialog
+- `https://github.com/tinkertanker/pxt-oled-ssd1306` — paste the URL
+
+Then paste [`firmware/maqueen-remote.ts`](firmware/maqueen-remote.ts) into
+[makecode.microbit.org](https://makecode.microbit.org) in JavaScript mode and
+download. The version scrolls across the LED matrix at boot, so you can check
+what is actually flashed before debugging anything else.
+
+## Level — pick a panel
+
+The layout goes out in fixed 18-character chunks about 35ms apart, so the full
+panel takes nearly twelve seconds to arrive. Loading a graph, a radar control
+and fourteen system widgets to teach someone which button goes forward is time
+spent for nothing, so the **Level** selector chooses what the robot serves:
+
+| Level | widgets | load | carries |
+|---|---|---|---|
+| Beginner | 6 | ~2.7s | drive pad, stop, distance, alert |
+| Drive | 7 | ~3.0s | pad, speed, per-wheel jog |
+| Distance | 8 | ~4.1s | gauge, graph, one-shot read, **and the radar head** |
+| Screen | 6 | ~2.8s | screen mode, message, face style, buzz |
+| Expert | 29 | ~11.9s | everything |
+
+The split mirrors the rover's own `IDS_*` lists widget for widget wherever the
+hardware allows. The head sits under **Distance** because it aims the sonar —
+filing it with the screen controls would split the radar in half, with the
+thing that points the sensor on one panel and the reading it produces on
+another. Line sensors and drive Mode have no rover counterpart, so they follow
+the rover's rule for its own extras: Expert only.
+
+Switching pushes the new panel immediately — no reconnect. Telemetry is filtered
+to match, so nothing is published to a widget the panel does not contain.
+
+## The screen
+
+With an OLED fitted, **button A** cycles four modes and the app's *Screen*
+selector chooses the same four:
+
+- **Status** — link and uptime, drive mode, speed, last motor command, distance
+  and both line sensors. Disconnected, it shows the **pairing name** instead of
+  the drive mode: the browser lists every board as `BBC micro:bit [xxxxx]` and
+  picking your own out of a classroom is otherwise a guess.
+- **Face** — two eyes with moods, below.
+- **Auto** — Status until the app connects, then Face.
+- **Radar** — a sonar map. It only means anything **with the ultrasonic mounted
+  on Servo 1**; left on the chassis every reading lands at the same heading and
+  the scope draws one spoke, which is all the robot can see. *Radar head*
+  chooses Sweep (pans itself) or Aim (follows the Servo 1 slider).
+
+At power-up the screen runs a **self-test** before anything else: the screen and
+motor driver addresses, a real sonar reading, and both line sensors as raw pin
+values. Every line is a measurement taken just then — a test that cannot fail
+tells you nothing.
+
+### The face
+
+Moods, in the order they outrank each other: **happy** (logo touched, V2),
+**alarm** (picked up or tipped), **startle** (something just arrived in front),
+**dizzy** (just spun on the spot), **worried** (something close ahead),
+**asleep** (20s idle), and otherwise **open** — blinking, where one blink in
+four is a wink. Driving, the pupils follow the D-pad; parked, they follow
+whichever line sensor is over the line.
+
+Five styles — Round, Circle, Robot, Big, Visor — from **button B** or the app's
+*Face style* selector. A style is a look, not a behaviour: all five blink,
+worry, startle and sleep.
+
+## Reading the robot without a screen
+
+Every command leaves a mark on the micro:bit's LED matrix, so an unscreened
+robot can still be read across a table: `vNN` scrolling is the version at boot,
+a hollow ring means powered and waiting, a filling grid is the layout going out,
+✓ connected, ✗ link lost with motors stopped, ■ STOP, arrows for direction, a
+centre dot for idle, side bands for the headlights, ♪ for buzz, and a bar graph
+for a servo angle. The D-pad is the one deliberate exception — visual feedback
+was removed from its hot path because responsiveness matters more.
+
+## Protocol
+
+Plain text lines over the Nordic UART service.
+
+```
+app   -> robot   GETCFGVER                 what is your layout's fingerprint?
+robot -> app     CFGVER <revision>
+app   -> robot   CFGOK <revision>          already cached, send nothing
+app   -> robot   GETCFG                    send the whole thing
+robot -> app     CFGBEGIN <chunkCount> / CFG <b64> / CFGEND
+app   -> robot   SET <widgetId> <value...>
+robot -> app     UPD <widgetId> <value>
+app   -> robot   'a'..'p'                  complete D-pad state, one byte
+```
+
+**Keep messages at or under 20 bytes.** The micro:bit negotiates the default
+23-byte ATT MTU, leaving exactly 20 bytes of payload, and a longer write is
+*silently truncated* rather than rejected — the trailing newline never arrives
+and the command vanishes with no error at either end. This is why the D-pad
+sends a single byte: `SET dpad_move up 1` fits at 19 bytes while `down`, `left`
+and `right` do not, which is why only "up" ever worked before v43.
+
+## Repository
+
+| Path | What |
+|---|---|
+| `firmware/maqueen-remote.ts` | the firmware — paste this into MakeCode |
+| `firmware/gen_layout.py` | designs the full Expert layout, zone by zone |
+| `firmware/gen_levels.py` | cuts the five Level panels out of it |
+| `index.html` `script.js` `styles.css` | the web app |
+
+Licence: MIT. Powered by [Workshop-DIY.org](https://workshop-diy.org).
+
+---
+
+Everything below is the version history, newest first.
+
+# Firmware v63 — faithful to the rover, and a proper README
+
+The Level split now mirrors the rover's own `IDS_*` lists widget for widget
+wherever the hardware allows. Four things had drifted:
+
+- **The radar head moved to Distance.** It aims the sonar, and filing it with
+  the screen controls split the radar in half — the thing that points the
+  sensor on one panel, the reading it produces on another. The rover files
+  `srv_head`/`gauge_head`/`head_mode` under Distance for exactly this reason.
+- **Buzz joined Screen**, as it rides along on the rover's `IDS_SCREEN`.
+- **Mode left Drive.** The rover keeps it in Expert only; line sensors and the
+  drive Mode they feed have no rover counterpart, so they follow the rover's
+  rule for its own extras.
+- **Level's options and the LAYOUT_\* constants** are ordered as the rover
+  orders them, so the two firmwares read side by side without translation.
+
+| Level | widgets | load |
+|---|---|---|
+| Beginner | 6 | ~2.7s |
+| Drive | 7 | ~3.0s |
+| Distance | 8 | ~4.1s |
+| Screen | 6 | ~2.8s |
+| Expert | 29 | ~11.9s |
+
+**A generator broke and said nothing about it.** `gen_layout.py` reads the
+previous layout back out of the firmware to preserve every widget's own
+properties, and it looked for `const CFG = "..."` — which stopped existing in
+v62, when one blob became five and `CFG` turned into a `let` pointing at one of
+them. It failed with a bare `AttributeError` on a `None`. It now reads
+`CFG_EXPERT` explicitly and fails with a sentence if that is missing too.
+
+**And the README is a README again.** `readme.md` had become a pure changelog:
+whoever landed on it first saw "Firmware v62 — Level..." with no idea what the
+project was. There is now an overview above the history — what it is, what you
+need, both required extensions, the Level table, the screen and its four modes,
+the face and its five styles, the LED-matrix legend for an unscreened robot,
+and the protocol with the 20-byte rule. `README.html` carries the same content.
+
 # Firmware v62 — Level, so a beginner does not wait twelve seconds
 
 The rover's Level selector, on the Maqueen. Five panels are compiled in and the

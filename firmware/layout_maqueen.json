@@ -428,7 +428,7 @@
    "w": 180,
    "h": 94,
    "label": "Level",
-   "options": "Beginner,Drive,Distance,Screen,Expert"
+   "options": "Beginner,Expert,Drive,Distance,Screen"
   }
  ],
  "canvas": {

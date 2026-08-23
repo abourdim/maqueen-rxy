@@ -39,26 +39,31 @@
 <div class="wrap">
 
 <h1>Maqueen RXY</h1>
-<p class="tag">A drag-and-drop Bluetooth remote for the <strong>DFRobot Maqueen Lite</strong>,
-driven from a micro:bit. Powered by <a href="https://workshop-diy.org">Workshop-DIY.org</a></p>
+<p class="tag">A Bluetooth remote for the <strong>DFRobot Maqueen Lite</strong>, driven from a
+micro:bit. Powered by <a href="https://workshop-diy.org">Workshop-DIY.org</a></p>
 
-<p>The web app builds its interface from a layout the <strong>robot itself sends</strong> on
-connect — so the firmware owns the layout, and the app is a generic renderer. Nothing to
-configure on the browser side.</p>
+<p><strong>The robot owns the layout.</strong> The web app is a renderer: it connects, asks the
+robot for its configuration, and draws whatever comes back. There is nothing to set up on the
+browser side and no per-robot build of the app.</p>
 
 <h2>What you need</h2>
 <ul>
-  <li>BBC micro:bit (V1 or V2)</li>
+  <li>BBC micro:bit — <strong>V2 recommended</strong>: the logo-touch face works only there</li>
   <li>DFRobot <strong>Maqueen Lite</strong> chassis</li>
-  <li>A browser with Web Bluetooth: Chrome, Edge or Opera on desktop/Android
-      (Safari and iOS are not supported — Apple does not implement Web Bluetooth)</li>
+  <li><em>Optional:</em> an <strong>SSD1306 128×64 OLED</strong> on the I2C header at <code>0x3C</code></li>
+  <li>Chrome or Edge, on desktop or Android. Safari and iOS cannot do this at all — every iOS
+      browser is WebKit underneath and none implement Web Bluetooth</li>
 </ul>
 
 <h2>Flashing the firmware</h2>
+<p>Two MakeCode extensions are required, and it will not compile without both:</p>
+<ul>
+  <li><code>pxt-maqueen</code> — search "maqueen" in the Extensions dialog</li>
+  <li><code>https://github.com/tinkertanker/pxt-oled-ssd1306</code> — paste the URL</li>
+</ul>
 <ol>
   <li>Open <a href="https://makecode.microbit.org">makecode.microbit.org</a> → <strong>New Project</strong></li>
-  <li>Switch to <strong>JavaScript</strong></li>
-  <li><strong>Extensions</strong> → search <code>maqueen</code> → add <strong>pxt-maqueen</strong></li>
+  <li>Switch to <strong>JavaScript</strong>, add both extensions above</li>
   <li>Paste the contents of <a href="firmware/maqueen-remote.ts"><code>firmware/maqueen-remote.ts</code></a></li>
   <li><strong>Download</strong> to the micro:bit</li>
 </ol>
@@ -71,6 +76,57 @@ configure on the browser side.</p>
 <blockquote>Opening the file directly via <code>file://</code> mostly works but is unreliable —
 <code>file://</code> is treated as a unique security origin, which breaks parts of Web Bluetooth.</blockquote>
 
+<h2>Level — pick a panel</h2>
+<p>The layout goes out in fixed 18-character chunks about 35ms apart, so the full panel takes
+nearly twelve seconds to arrive. Loading a graph, a radar control and fourteen system widgets to
+teach someone which button goes forward is time spent for nothing, so the <strong>Level</strong>
+selector chooses what the robot serves:</p>
+<table>
+  <tr><th>Level</th><th>Widgets</th><th>Load</th><th>Carries</th></tr>
+  <tr><td>Beginner</td><td>6</td><td>~2.7s</td><td>drive pad, stop, distance, alert</td></tr>
+  <tr><td>Drive</td><td>7</td><td>~3.0s</td><td>pad, speed, per-wheel jog</td></tr>
+  <tr><td>Distance</td><td>8</td><td>~4.1s</td><td>gauge, graph, one-shot read, <strong>and the radar head</strong></td></tr>
+  <tr><td>Screen</td><td>6</td><td>~2.8s</td><td>screen mode, message, face style, buzz</td></tr>
+  <tr><td>Expert</td><td>29</td><td>~11.9s</td><td>everything</td></tr>
+</table>
+<p>Switching pushes the new panel immediately — no reconnect. Telemetry is filtered to match, so
+nothing is published to a widget the panel does not contain.</p>
+<p>The split mirrors the rover's own <code>IDS_*</code> lists widget for widget wherever the
+hardware allows. The head sits under <strong>Distance</strong> because it aims the sonar — filing
+it with the screen controls would split the radar in half, with the thing that points the sensor
+on one panel and the reading it produces on another.</p>
+
+<h2>The screen</h2>
+<p>With an OLED fitted, <strong>button A</strong> cycles four modes, and the app's
+<strong>Screen</strong> selector chooses the same four:</p>
+<table>
+  <tr><th>Mode</th><th>Shows</th></tr>
+  <tr><td>Status</td><td>Link and uptime, drive mode, speed, last motor command, distance, both
+      line sensors. Disconnected it shows the <strong>pairing name</strong> instead of the drive
+      mode — the browser lists every board as <code>BBC micro:bit [xxxxx]</code> and picking your
+      own out of a classroom is otherwise a guess.</td></tr>
+  <tr><td>Face</td><td>Two eyes with moods — see below</td></tr>
+  <tr><td>Auto</td><td>Status until the app connects, then Face</td></tr>
+  <tr><td>Radar</td><td>A sonar map. <strong>Requires the ultrasonic on Servo 1</strong>; left on
+      the chassis every reading lands at the same heading and the scope draws one spoke, which is
+      all the robot can see. <em>Radar head</em> chooses Sweep (pans itself) or Aim (follows the
+      Servo 1 slider).</td></tr>
+</table>
+<p>At power-up the screen runs a <strong>self-test</strong> before anything else: the screen and
+motor driver addresses, a real sonar reading, and both line sensors as raw pin values. Every line
+is a measurement taken just then — a test that cannot fail tells you nothing.</p>
+
+<h3>The face</h3>
+<p>Moods, in the order they outrank each other: <strong>happy</strong> (logo touched, V2),
+<strong>alarm</strong> (picked up or tipped), <strong>startle</strong> (something just arrived in
+front), <strong>dizzy</strong> (just spun on the spot), <strong>worried</strong> (something close
+ahead), <strong>asleep</strong> (20s idle), and otherwise <strong>open</strong> — blinking, where
+one blink in four is a wink. Driving, the pupils follow the D-pad; parked, they follow whichever
+line sensor is over the line.</p>
+<p>Five styles — Round, Circle, Robot, Big, Visor — from <strong>button B</strong> or the app's
+<em>Face style</em> selector. A style is a look, not a behaviour: all five blink, worry, startle
+and sleep.</p>
+
 <h2>Controls</h2>
 <table>
   <tr><th>Control</th><th>Does</th></tr>
@@ -78,21 +134,26 @@ configure on the browser side.</p>
   <tr><td>Speed</td><td>Top speed for manual <em>and</em> autonomous driving</td></tr>
   <tr><td>Mode</td><td><code>Manual</code> / <code>Line</code> (line-following) / <code>Avoid</code> (obstacle avoidance)</td></tr>
   <tr><td>STOP</td><td>Cut both motors immediately</td></tr>
+  <tr><td>Left / Right motor</td><td>Hold to run one wheel — a dead-man switch, for testing a side</td></tr>
   <tr><td>Buzz</td><td>Short tone</td></tr>
   <tr><td>LED L / LED R</td><td>Headlights</td></tr>
-  <tr><td>Servo 1 / 2</td><td>Servo angle, 0–180°</td></tr>
+  <tr><td>Servo 1 / 2</td><td>Servo angle, 0–180°. Servo 1 is the radar head when one is fitted</td></tr>
   <tr><td>Line L / R</td><td>Line sensors — <strong>lit = that side is on the line</strong></td></tr>
   <tr><td>Distance</td><td>Ultrasonic reading, as a gauge and a rolling graph</td></tr>
+  <tr><td>Screen / Message</td><td>Which screen mode, and text to type onto the robot's glass</td></tr>
+  <tr><td>Face style / Radar head</td><td>Which eyes, and whether the radar sweeps or is aimed</td></tr>
+  <tr><td>Level</td><td>Which panel the robot serves — see above</td></tr>
+  <tr><td>Telemetry</td><td><code>All</code> / <code>Basic</code> / <code>Off</code></td></tr>
   <tr><td>Uptime</td><td>Session timer — proves the link is alive</td></tr>
 </table>
 
 <h2>Reading the robot without a screen</h2>
-<p>Every command leaves a mark on the micro:bit's LED matrix, so you can tell what reached the
-robot with no cable and no console attached:</p>
+<p>Every command leaves a mark on the micro:bit's LED matrix, so an unscreened robot can still be
+read across a table with no cable and no console attached:</p>
 <table>
   <tr><th>Glyph</th><th>Meaning</th></tr>
   <tr><td><code>vNN</code> scrolling</td><td>Firmware version at boot</td></tr>
-  <tr><td class="glyph">♥</td><td>Powered up, waiting for Bluetooth</td></tr>
+  <tr><td class="glyph">○</td><td>Powered up, waiting for Bluetooth</td></tr>
   <tr><td>grid filling pixel by pixel</td><td>Sending the layout</td></tr>
   <tr><td class="glyph">✓</td><td>Connected, layout delivered</td></tr>
   <tr><td class="glyph">✗</td><td>Bluetooth lost (motors auto-stopped)</td></tr>
@@ -103,18 +164,34 @@ robot with no cable and no console attached:</p>
   <tr><td class="glyph">♪</td><td>Buzz</td></tr>
   <tr><td>bar graph</td><td>Servo angle</td></tr>
 </table>
+<p>The D-pad is the one deliberate exception: visual feedback was removed from its hot path
+because responsiveness matters more than per-packet animation.</p>
 
 <h2>Protocol</h2>
 <p>Plain text lines over the Nordic UART service.</p>
-<pre><code>App → robot    SET &lt;widgetId&gt; &lt;value...&gt;
-App → robot    GETCFG                      request the layout (sent once, on connect)
-robot → App    CFGBEGIN / CFG &lt;b64&gt; / CFGEND
-robot → App    UPD &lt;widgetId&gt; &lt;value&gt;      sensor and status updates</code></pre>
+<pre><code>app   -&gt; robot   GETCFGVER                 what is your layout's fingerprint?
+robot -&gt; app     CFGVER &lt;revision&gt;
+app   -&gt; robot   CFGOK &lt;revision&gt;          already cached, send nothing
+app   -&gt; robot   GETCFG                    send the whole thing
+robot -&gt; app     CFGBEGIN &lt;chunkCount&gt; / CFG &lt;b64&gt; / CFGEND
+app   -&gt; robot   SET &lt;widgetId&gt; &lt;value...&gt;
+robot -&gt; app     UPD &lt;widgetId&gt; &lt;value&gt;
+app   -&gt; robot   'a'..'p'                  complete D-pad state, one byte</code></pre>
 <p><strong>Keep messages at or under 20 bytes.</strong> The micro:bit negotiates the default
 23-byte ATT MTU, leaving exactly 20 bytes of payload. A longer write is <em>silently
 truncated</em> rather than rejected — the trailing newline never arrives and the command
-vanishes with no error on either side. The app splits outgoing writes into 20-byte packets;
-the UART service reassembles them.</p>
+vanishes with no error on either side. This is why the D-pad sends a single byte:
+<code>SET dpad_move up 1</code> fits at 19 bytes while <code>down</code>, <code>left</code> and
+<code>right</code> do not, which is why only "up" ever worked before v43.</p>
+
+<h2>Repository</h2>
+<table>
+  <tr><th>Path</th><th>What</th></tr>
+  <tr><td><code>firmware/maqueen-remote.ts</code></td><td>the firmware — paste this into MakeCode</td></tr>
+  <tr><td><code>firmware/gen_layout.py</code></td><td>designs the full Expert layout, zone by zone</td></tr>
+  <tr><td><code>firmware/gen_levels.py</code></td><td>cuts the five Level panels out of it</td></tr>
+  <tr><td><code>index.html</code> <code>script.js</code> <code>styles.css</code></td><td>the web app</td></tr>
+</table>
 
 <h2>Licence</h2>
 <p>MIT</p>

@@ -34,12 +34,26 @@ CONTROLS = [w for w in widgets if w["t"] not in ("group", "separator")]
 # `level` MUST appear in every panel. If it existed only in Expert, choosing
 # Beginner would strand the robot there until it was reflashed -- the rover
 # carries the same warning for the same reason.
+# These mirror the rover's IDS_* lists widget for widget wherever the hardware
+# allows. Two rover widgets have no Maqueen counterpart -- trim (its wheels are
+# servos and need calibrating; these are geared motors) and beeps -- and two
+# Maqueen widgets have no rover counterpart: the line sensors and the drive
+# Mode they feed. Those follow the rover's rule for its own extras rather than
+# being sprinkled about: Expert only.
+#
 LEVELS = {
     "BEGINNER": "dpad_move btn_stop gauge_dist alert lbl_ver level",
-    "DRIVE":    "dpad_move spd btn_stop gauge_spd btn_ml btn_mr mode level",
-    "DIST":     "gauge_dist alert dist_read graph_dist ln_l ln_r level",
-    "SCREEN":   "screen_mode oled_text lbl_oled face_style head_mode "
-                "slider_srv1 gauge_srv1 level",
+    "DRIVE":    "dpad_move spd btn_stop gauge_spd btn_ml btn_mr level",
+    # The head lives here because it AIMS THE SONAR. Putting it beside the
+    # screen controls, as an earlier cut did, split the radar in half: the
+    # thing that points the sensor sat on one panel and the reading it
+    # produces on another. The rover files srv_head/gauge_head/head_mode under
+    # Distance for exactly this reason.
+    "DIST":     "gauge_dist alert dist_read graph_dist "
+                "slider_srv1 gauge_srv1 head_mode level",
+    # btn_buzz rides along here as it does on the rover: it is the other thing
+    # the robot does at you rather than with, and it has nowhere better.
+    "SCREEN":   "screen_mode oled_text lbl_oled face_style btn_buzz level",
     "EXPERT":   None,                      # None means "everything"
 }
 # Expert is the full panel including its separators; the subsets drop those,
