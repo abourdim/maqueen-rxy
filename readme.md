@@ -461,3 +461,50 @@ Firmware remains **v52**; this release is web-only.
 ## v2.11 — Trim Canvas
 
 Build includes an explicit **Trim Canvas** command for users who intentionally want to change the logical/exported canvas around occupied widgets. It is separate from Fit: Trim changes design geometry/canvas bounds and is Undo/Redo-aware; Fit only changes the view.
+
+<!-- Recovered from README.html, where these entries lived only as loose
+     fragments outside the document body. -->
+
+## Web v2.13 — Build / Play fully reviewed
+
+Build and Play now use a deterministic state model: mode switches and view controls never rewrite geometry, disconnected Play deep-clones Build, connected Play uses only verified device CFG, Arrange is zoom-correct and command-safe, runtime listeners are lifecycle-cleaned, and Fit/fullscreen handle oversized canvases without clipping or dead space. Responsive Play/fullscreen checks passed from 640×900 through 1920×1080. Firmware remains v52.
+
+## Web v2.10 — Play Fit Content
+
+Play Fit uses occupied widget bounds instead of empty authoring canvas space, while preserving the logical CFG geometry and 1:1 view.
+
+## Web v2.4 — Stable Build/Play geometry
+
+Fixed Build → Import → Play → Build changing widget positions. Automatic Tidy on resize/tab switch has been removed. Build is the authoritative model and Play renders a deep-cloned snapshot; only explicit Tidy or Play/Arrange edits may change geometry.
+
+## Web v2.3 — Fit large imported designs
+
+Build now uses a scrollable, zoomable editor viewport without changing the logical CFG canvas. Imports automatically fit the whole design. Use **Fit Design**, +/−, 1:1, mouse-wheel/controls, normal scroll, or Alt/Option + drag to navigate large layouts while preserving exact export geometry.
+
+## Web v2.2 — Group + Line
+
+Build now includes config-native **Group** and **Line/Separator** widgets. Groups can capture child widget IDs and move the whole functional section together; line separators support horizontal/vertical orientation, subtle/solid/dashed styles, thickness, color and an optional label. Both survive Layout JSON and MakeCode CFG export.
+
+## Web v2.1 — Portable layout export
+
+Build and Play/Arrange can export the exact design as **Layout JSON** or a **MakeCode CFG** TypeScript snippet. Both include the canvas geometry and a fresh deterministic config revision.
+
+## v51 — Config-defined reference layout
+
+The MakeCode CFG now carries the approved **1372 × 776** layout, including widget positions/sizes and an explicit canvas size. The web app v2.1 honors that canvas metadata. Config revision: `47c78c1f`. Control behavior remains v50.
+
+## v50 — Heartbeat follows Telemetry
+
+Heartbeat is now controlled by the Telemetry selector in every drive mode: **All/Basic** send heartbeat, while **Off** is silent. Line/Avoid motor activity no longer suppresses the heartbeat. The widget configuration is unchanged.
+
+## v49 — Distance Read selector
+
+The MakeCode CFG now includes a **Distance read** selector with **Auto** and **Read now**. Read now takes one ultrasonic sample in any drive mode and updates the distance gauge and graph, then returns the selector to Auto.
+
+## Web app 2.0
+
+The web application version is now **2.0**. A single very discreet Bismillah appears at the absolute top. Firmware remains v50.
+
+## v2.11
+
+Build adds Trim Canvas to remove unused logical canvas space while preserving relative widget layout and supporting Undo/Redo.
