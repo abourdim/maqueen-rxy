@@ -1,3 +1,45 @@
+# Firmware v60 — the screen comes up first, and the self-test is real
+
+**Boot was not slow; the screen was simply last in the queue.**
+`basic.showString()` ran ahead of `oledInit()`, and it scrolls the version
+across the 5x5 matrix a column at a time, blocking for roughly two seconds
+while it does. The panel sat dark through all of it, so the robot looked dead
+until the self-test finally appeared. The OLED is now brought up before
+anything that blocks, and lights within milliseconds of power-on. The LED
+scroll still happens, behind the already-readable self-test, and at 80ms per
+column instead of the 150ms default since the OLED is carrying the same
+version number anyway.
+
+The self-test's hold now starts at the END of boot rather than when it was
+drawn. Drawn early on purpose, it would otherwise have spent most of its hold
+behind the LED scroll and the accelerometer sampling, then been replaced a
+moment after those finished — readable for a fraction of the time it looked
+like it was being given.
+
+**The self-test now tests something.** It pinged two I2C addresses before,
+which cannot tell you why a robot is not driving. It now reports:
+
+```
+Workshop-DIY.org
+Maqueen      v60
+                        <- blank
+Screen 0x3C   ok
+Driver 0x10   ok
+Sonar    45 cm          clear | NO ECHO
+Line     L 1   R 0
+```
+
+Every line is a measurement taken just now, not a claim: the driver line means
+that address ACKed, the sonar line means a pulse came back. A test that cannot
+fail tells you nothing, so nothing here is hardcoded to pass. The line sensors
+show RAW pin values rather than the inverted "on the line" sense the app
+displays — an unplugged sensor reads a constant, and seeing which constant is
+the point of a bring-up screen.
+
+The one sonar reading costs up to ~250ms when nothing echoes back. That is
+affordable exactly once, here, which is why the polling loop is careful about
+it everywhere else. Hold is 3.5s, up from 2.5s, since there is more to read.
+
 # Firmware v59 — the screen in the app, and eyes that react
 
 **A Screen zone in the panel**, mirroring the rover's: a `Status / Face / Auto`

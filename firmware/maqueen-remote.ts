@@ -235,7 +235,7 @@
 // Bump this on every real change and check it (serial log + LED scroll
 // at boot) to confirm what's actually flashed before debugging further —
 // no more guessing whether a fix was really re-flashed.
-const FIRMWARE_VERSION = "v59"
+const FIRMWARE_VERSION = "v60"
 
 // Debug helper — logs ONLY if debugEnabled is true (default false).
 // THIS IS THE ROOT CAUSE of "connected, but nothing happens": pxt-
@@ -949,7 +949,7 @@ const OLED_ROWS = 8              // 64 rows / 8-pixel font
 // and at 250ms most blinks would open and close unseen between two checks.
 // The rover runs the same 120.
 const OLED_REFRESH_MS = 120
-const OLED_SPLASH_MS = 2500
+const OLED_SPLASH_MS = 3500
 
 // A missing panel must cost nothing at all. Without this every refresh would
 // spend its transactions writing into the void, on the bus the motors need.
@@ -1008,18 +1008,39 @@ function oledInit() {
 // answers the two questions a bench test actually starts with: is the screen
 // wired, and did the motor driver ACK? A robot that boots to a blank panel is
 // indistinguishable from one with a dead battery.
-function oledSplash() {
+// A robot fails on a bench in a handful of ways -- sonar lead off, driver not
+// seen, a line sensor unplugged, flat pack -- and the answer used to be a
+// teacher crouching over it with a phone and an app. This answers it from
+// across the table with nothing connected at all.
+//
+// Every line is a MEASUREMENT, not a claim: "Driver 0x10 ok" means the address
+// ACKed just now, and "Sonar 45 cm" means a pulse came back. A test that
+// cannot fail tells you nothing, so nothing here is hardcoded to pass.
+function oledSelfTest() {
     if (!oledOk) return
     const driver = i2cPresent(MAQUEEN_I2C_ADDR) ? "ok" : "MISSING"
+    // One reading, once. Ultrasonic() costs ~250ms when nothing echoes back
+    // (see the polling notes below) and that is affordable exactly once, here.
+    const cm = maqueen.Ultrasonic()
+    const sonar = cm >= 500 ? "clear"
+        : cm > 0 ? ("" + cm + " cm")
+        : "NO ECHO"
+    // Raw pin values, not the inverted "on the line" sense the app shows: an
+    // unplugged sensor reads a constant, and seeing which constant is the
+    // whole point of a bring-up screen.
+    const rawL = maqueen.readPatrol(maqueen.Patrol.PatrolLeft)
+    const rawR = maqueen.readPatrol(maqueen.Patrol.PatrolRight)
     OLED.clear()
     OLED.writeStringNewLine("Workshop-DIY.org")
-    OLED.writeStringNewLine("")
     OLED.writeStringNewLine("Maqueen      " + FIRMWARE_VERSION)
     OLED.writeStringNewLine("")
-    OLED.writeStringNewLine("Screen 0x3C  ok")
-    OLED.writeStringNewLine("Driver 0x10  " + driver)
-    dbg("selftest: screen=ok driver=" + driver)
-    oledSplashUntil = input.runningTime() + OLED_SPLASH_MS
+    OLED.writeStringNewLine("Screen 0x3C   ok")
+    OLED.writeStringNewLine("Driver 0x10   " + driver)
+    OLED.writeStringNewLine("Sonar    " + sonar)
+    OLED.writeStringNewLine("Line     L " + rawL + "   R " + rawR)
+    OLED.writeStringNewLine("")
+    dbg("selftest: driver=" + driver + " sonar=" + sonar
+        + " line=" + rawL + "/" + rawR)
     // Whatever the screen shows next must repaint over this.
     for (let i = 0; i < OLED_ROWS; i++) oledOnGlass[i] = ""
 }
@@ -1679,12 +1700,22 @@ function sendValue(id: string, val: string) {
 maqueen.motorStop(maqueen.Motors.All)
 maqueen.servoRun(maqueen.Servos.S1, 90)
 maqueen.servoRun(maqueen.Servos.S2, 90)
-basic.showString(FIRMWARE_VERSION)
-// The screen comes up before the idle ring: its splash is a self-test, and
-// the first thing worth knowing on a bench is whether the driver ACKed.
+
+// THE SCREEN COMES UP FIRST, and the order here is the whole reason it is
+// quick. Until v60 basic.showString() ran ahead of oledInit(): it scrolls the
+// version across the 5x5 matrix a column at a time and BLOCKS for roughly two
+// seconds doing it, so the panel sat dark through all of it and the robot
+// looked dead until the self-test finally appeared. Nothing was slow about
+// the screen; it was simply last in the queue.
 oledInit()
 fbInit()
-oledSplash()
+oledSelfTest()
+
+// Now the blocking parts, with the self-test already readable while they run.
+// The LED scroll is still worth having -- it is the only version readout on a
+// robot with no screen fitted -- but at 80ms per column instead of the 150ms
+// default, since the OLED is now carrying the same number anyway.
+basic.showString(FIRMWARE_VERSION, 80)
 // Measured while the robot is sitting still on the bench, which is the only
 // moment its resting attitude is known for certain.
 attitudeCalibrate()
@@ -1701,6 +1732,13 @@ basic.showLeds(`
     # . . . #
     . # # # .
     `, 0)
+// Start the self-test's clock HERE rather than inside oledSelfTest(). Drawn
+// early on purpose, it would otherwise spend most of its hold behind the LED
+// scroll and the accelerometer sampling, and be replaced by the status screen
+// a moment after those finished -- readable for a fraction of the time it
+// looked like it was being given.
+oledSplashUntil = input.runningTime() + OLED_SPLASH_MS
+
 // Button A cycles the screen. Deliberately a button on the robot rather than
 // a widget in the app: the face is for whoever is in the room with it, and
 // this way it costs neither a layout change nor the hidden `settings`
