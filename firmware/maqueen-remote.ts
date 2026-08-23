@@ -146,6 +146,26 @@
  *    splash reports whether both ACKed, so a mis-wired screen or a dead
  *    driver is visible before anything else is debugged.
  *
+ * 🎚️ LEVEL — which panel the robot serves, from the app's Level selector.
+ *    Beginner   6 widgets, ~2.7s to load   drive pad, stop, distance, alert
+ *    Drive      8 widgets, ~3.6s           the pad, speed, per-wheel jog, mode
+ *    Distance   7 widgets, ~3.3s           gauge, graph, one-shot, line LEDs
+ *    Screen     8 widgets, ~3.6s           screen mode, message, face, radar
+ *    Expert    29 widgets, ~11.9s          everything
+ *
+ *    CFG goes out in fixed 18-character chunks about 35ms apart, so the full
+ *    panel is nearly twelve seconds before a child sees anything. Loading a
+ *    graph, a radar head control and fourteen system widgets to teach someone
+ *    which button goes forward is time spent for nothing.
+ *
+ *    `level` MUST appear in every panel -- gen_levels.py fails the build if it
+ *    does not. A selector that existed only in Expert would strand the robot
+ *    in whatever panel you picked until it was reflashed.
+ *
+ *    Telemetry is filtered to the panel on screen too: publishing a distance
+ *    sample to a Beginner panel with no graph spends 18 characters of a very
+ *    slow link on a widget that is not there.
+ *
  * 🖥️ SCREEN MODES — the Screen selector in the app, or button A on the
  *    micro:bit, which cycles the same three. Either drives it and both stay
  *    in step: A pushes its new value back to the app, and a fresh connect
@@ -251,7 +271,7 @@
 // Bump this on every real change and check it (serial log + LED scroll
 // at boot) to confirm what's actually flashed before debugging further —
 // no more guessing whether a fix was really re-flashed.
-const FIRMWARE_VERSION = "v61"
+const FIRMWARE_VERSION = "v62"
 
 // Debug helper — logs ONLY if debugEnabled is true (default false).
 // THIS IS THE ROOT CAUSE of "connected, but nothing happens": pxt-
@@ -447,9 +467,73 @@ function cfgRevisionFromCfg(text: string): string {
     return "d" + (hash >>> 0)
 }
 
-const CFG = "eyJ0aXRsZSI6Ik1hcXVlZW4gUmVtb3RlIiwid2lkZ2V0cyI6W3siaWQiOiJncnBfZHJpdmUiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IkRSSVZFIiwiY29sb3IiOiIjMDBkNGZmIiwieCI6NTYsInkiOjQyLCJ3Ijo5MzcsImgiOjY4MiwiY2hpbGRyZW4iOiJkcGFkX21vdmUsc3BkLGJ0bl9zdG9wLGdhdWdlX3NwZCxidG5fbWwsYnRuX21yIn0seyJpZCI6ImdycF9oZWFkIiwidCI6Imdyb3VwIiwibGFiZWwiOiJIRUFEIiwiY29sb3IiOiIjZmY5NTAwIiwieCI6NTYsInkiOjc2MiwidyI6NjYxLCJoIjoyODUsImNoaWxkcmVuIjoic2xpZGVyX3NydjEsZ2F1Z2Vfc3J2MSxzbGlkZXJfc3J2MixnYXVnZV9zcnYyIn0seyJpZCI6ImdycF9saWdodCIsInQiOiJncm91cCIsImxhYmVsIjoiTElHSFRTICYgU09VTkQiLCJjb2xvciI6IiNjMDg0ZmMiLCJ4Ijo3MzYsInkiOjc2MiwidyI6MjYyLCJoIjozNDgsImNoaWxkcmVuIjoidG9nZ2xlX2xlZF9sLHRvZ2dsZV9sZWRfcixidG5fYnV6eiJ9LHsiaWQiOiJncnBfZGlzdCIsInQiOiJncm91cCIsImxhYmVsIjoiRElTVEFOQ0UiLCJjb2xvciI6IiNmZmIwMjAiLCJ4IjoxMDM2LCJ5Ijo0MiwidyI6NTI5LCJoIjo2ODAsImNoaWxkcmVuIjoiZ2F1Z2VfZGlzdCxhbGVydCxkaXN0X3JlYWQsZ3JhcGhfZGlzdCJ9LHsiaWQiOiJncnBfYXV0byIsInQiOiJncm91cCIsImxhYmVsIjoiQVVUT05PTVkiLCJjb2xvciI6IiMwMGU2NzYiLCJ4IjoxMDM2LCJ5Ijo3NTIsInciOjQyMSwiaCI6MTg3LCJjaGlsZHJlbiI6ImxuX2wsbG5fcixtb2RlIn0seyJpZCI6ImdycF9zY3IiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IlNDUkVFTiIsImNvbG9yIjoiIzM4YmRmOCIsIngiOjU2LCJ5IjoxMTIyLCJ3Ijo4ODgsImgiOjI5NCwiY2hpbGRyZW4iOiJzY3JlZW5fbW9kZSxvbGVkX3RleHQsbGJsX29sZWQsZmFjZV9zdHlsZSxoZWFkX21vZGUifSx7ImlkIjoiZ3JwX3N5cyIsInQiOiJncm91cCIsImxhYmVsIjoiU1lTVEVNIiwiY29sb3IiOiIjODg5MmIwIiwieCI6MTAzNiwieSI6OTYyLCJ3Ijo0MTUsImgiOjI3NiwiY2hpbGRyZW4iOiJsYmxfdmVyLGxibF9oZWFydGJlYXQsdXBkIn0seyJpZCI6InNlcF9jb2xzIiwidCI6InNlcGFyYXRvciIsIngiOjEwMTIsInkiOjEwMCwidyI6OCwiaCI6NjgwfSx7ImlkIjoic2VwX2xlZnQiLCJ0Ijoic2VwYXJhdG9yIiwieCI6ODAsInkiOjc0NSwidyI6ODkwLCJoIjo4fSx7ImlkIjoic2VwX3J0MSIsInQiOiJzZXBhcmF0b3IiLCJ4IjoxMDYwLCJ5Ijo3MzAsInciOjQ5MCwiaCI6OH0seyJpZCI6InNlcF9ydDIiLCJ0Ijoic2VwYXJhdG9yIiwieCI6MTA2MCwieSI6OTQ2LCJ3Ijo0OTAsImgiOjh9LHsiaWQiOiJkcGFkX21vdmUiLCJ0IjoiZHBhZCIsIngiOjgwLCJ5IjoxMDAsInciOjQ0OSwiaCI6NDU2LCJsYWJlbCI6IkRyaXZlIiwibW9kZWwiOiJjbGFzc2ljIn0seyJpZCI6InNwZCIsInQiOiJzbGlkZXIiLCJ4Ijo1NjAsInkiOjEwMCwidyI6MTQ4LCJoIjoyNjIsImxhYmVsIjoiU3BlZWQiLCJtaW4iOjYwLCJtYXgiOjI1NSwic3RlcCI6NSwidmFsdWUiOjIwMH0seyJpZCI6ImJ0bl9zdG9wIiwidCI6ImJ1dHRvbiIsIngiOjc0MCwieSI6MTAwLCJ3IjoxMDcsImgiOjExNSwibGFiZWwiOiJTVE9QIn0seyJpZCI6ImdhdWdlX3NwZCIsInQiOiJnYXVnZSIsIngiOjc0MCwieSI6MjUwLCJ3IjoyMjksImgiOjI1MiwibGFiZWwiOiJTcGVlZCIsIm1pbiI6NjAsIm1heCI6MjU1LCJ1bml0cyI6IiIsImRlY2ltYWxzIjowLCJtb2RlbCI6Im1pbiIsInNvdXJjZSI6InNwZCIsInZhbHVlIjoyMDB9LHsiaWQiOiJidG5fbWwiLCJ0IjoiYnV0dG9uIiwieCI6ODAsInkiOjU4MCwidyI6MjAwLCJoIjoxMjAsImxhYmVsIjoiTGVmdCBtb3RvciIsImljb24iOiLimpnvuI8iLCJzcGluIjotMSwiY29sb3IiOiIjMGU3NDkwIn0seyJpZCI6ImJ0bl9tciIsInQiOiJidXR0b24iLCJ4IjozMDAsInkiOjU4MCwidyI6MjAwLCJoIjoxMjAsImxhYmVsIjoiUmlnaHQgbW90b3IiLCJpY29uIjoi4pqZ77iPIiwic3BpbiI6MSwiY29sb3IiOiIjMGU3NDkwIn0seyJpZCI6InNsaWRlcl9zcnYxIiwidCI6InNsaWRlciIsIngiOjgwLCJ5Ijo4MjAsInciOjk5LCJoIjoyMDMsImxhYmVsIjoiU2Vydm8gMSIsIm1pbiI6MCwibWF4IjoxODAsInN0ZXAiOjEsInZhbHVlIjo5MH0seyJpZCI6ImdhdWdlX3NydjEiLCJ0IjoiZ2F1Z2UiLCJ4IjoyMDAsInkiOjgyMCwidyI6MTY0LCJoIjoxODUsImxhYmVsIjoiU2Vydm8gMSIsIm1pbiI6MCwibWF4IjoxODAsInVuaXRzIjoiwrAiLCJkZWNpbWFscyI6MCwibW9kZWwiOiJtaW4iLCJzb3VyY2UiOiJzbGlkZXJfc3J2MSIsInZhbHVlIjo5MH0seyJpZCI6InNsaWRlcl9zcnYyIiwidCI6InNsaWRlciIsIngiOjQwMCwieSI6ODIwLCJ3Ijo5OSwiaCI6MjAxLCJsYWJlbCI6IlNlcnZvIDIiLCJtaW4iOjAsIm1heCI6MTgwLCJzdGVwIjoxLCJ2YWx1ZSI6OTB9LHsiaWQiOiJnYXVnZV9zcnYyIiwidCI6ImdhdWdlIiwieCI6NTIwLCJ5Ijo4MjAsInciOjE3MywiaCI6MTgxLCJsYWJlbCI6IlNlcnZvIDIiLCJtaW4iOjAsIm1heCI6MTgwLCJ1bml0cyI6IsKwIiwiZGVjaW1hbHMiOjAsIm1vZGVsIjoibWluIiwic291cmNlIjoic2xpZGVyX3NydjIiLCJ2YWx1ZSI6OTB9LHsiaWQiOiJ0b2dnbGVfbGVkX2wiLCJ0IjoidG9nZ2xlIiwieCI6NzYwLCJ5Ijo4MjAsInciOjk3LCJoIjoxMjEsImxhYmVsIjoiTEVEIEwifSx7ImlkIjoidG9nZ2xlX2xlZF9yIiwidCI6InRvZ2dsZSIsIngiOjg3NywieSI6ODIwLCJ3Ijo5NywiaCI6MTIxLCJsYWJlbCI6IkxFRCBSIn0seyJpZCI6ImJ0bl9idXp6IiwidCI6ImJ1dHRvbiIsIngiOjc2MCwieSI6OTY1LCJ3IjoxMDgsImgiOjEyMSwibGFiZWwiOiJCdXp6In0seyJpZCI6ImdhdWdlX2Rpc3QiLCJ0IjoiZ2F1Z2UiLCJ4IjoxMDYwLCJ5IjoxMDAsInciOjI2NCwiaCI6MTg3LCJsYWJlbCI6IkRpc3RhbmNlIiwibWluIjowLCJtYXgiOjIwMCwidW5pdHMiOiJjbSIsImRlY2ltYWxzIjowLCJtb2RlbCI6ImNsYXNzaWMifSx7ImlkIjoiYWxlcnQiLCJ0Ijoibm90aWZpY2F0aW9uIiwieCI6MTM1MCwieSI6MTAwLCJ3Ijo5MCwiaCI6MTg2LCJsYWJlbCI6IkFsZXJ0In0seyJpZCI6ImRpc3RfcmVhZCIsInQiOiJzZWxlY3QiLCJ4IjoxMDYwLCJ5IjozMjAsInciOjE5NCwiaCI6NjIsImxhYmVsIjoiRGlzdGFuY2UgcmVhZCIsIm9wdGlvbnMiOiJBdXRvLFJlYWQgbm93In0seyJpZCI6ImdyYXBoX2Rpc3QiLCJ0IjoiZ3JhcGgiLCJ4IjoxMDYwLCJ5Ijo0MDAsInciOjQ4MSwiaCI6Mjk4LCJsYWJlbCI6IkRpc3RhbmNlIGNtIiwibW9kZWwiOiJncmlkIiwid2luZG93U2VjIjozMCwic2VyaWVzIjoxfSx7ImlkIjoibG5fbCIsInQiOiJsZWQiLCJ4IjoxMDYwLCJ5Ijo4MTAsInciOjc2LCJoIjoxMDUsImxhYmVsIjoiTGluZSBMIiwibW9kZWwiOiJkb3QiLCJjb2xvck9uIjoiIzRhZGU4MCJ9LHsiaWQiOiJsbl9yIiwidCI6ImxlZCIsIngiOjExNTYsInkiOjgxMCwidyI6NzgsImgiOjEwNSwibGFiZWwiOiJMaW5lIFIiLCJtb2RlbCI6ImRvdCIsImNvbG9yT24iOiIjNGFkZTgwIn0seyJpZCI6Im1vZGUiLCJ0Ijoic2VsZWN0IiwieCI6MTI1NCwieSI6ODIwLCJ3IjoxNzksImgiOjkyLCJsYWJlbCI6Ik1vZGUiLCJvcHRpb25zIjoiTWFudWFsLExpbmUsQXZvaWQifSx7ImlkIjoic2NyZWVuX21vZGUiLCJ0Ijoic2VsZWN0IiwieCI6ODAsInkiOjExODAsInciOjIwMCwiaCI6OTIsImxhYmVsIjoiU2NyZWVuIiwib3B0aW9ucyI6IlN0YXR1cyxGYWNlLEF1dG8sUmFkYXIifSx7ImlkIjoib2xlZF90ZXh0IiwidCI6ImVkaXRmaWVsZCIsIngiOjMyMCwieSI6MTE4MCwidyI6MzIwLCJoIjo5MiwibGFiZWwiOiJNZXNzYWdlIn0seyJpZCI6ImxibF9vbGVkIiwidCI6ImxhYmVsIiwieCI6NjgwLCJ5IjoxMTgwLCJ3IjoyNDAsImgiOjkyLCJsYWJlbCI6Ik9uIHNjcmVlbiJ9LHsiaWQiOiJmYWNlX3N0eWxlIiwidCI6InNlbGVjdCIsIngiOjgwLCJ5IjoxMzAwLCJ3IjoyMDAsImgiOjkyLCJsYWJlbCI6IkZhY2Ugc3R5bGUiLCJvcHRpb25zIjoiUm91bmQsQ2lyY2xlLFJvYm90LEJpZyxWaXNvciJ9LHsiaWQiOiJoZWFkX21vZGUiLCJ0Ijoic2VsZWN0IiwieCI6MzIwLCJ5IjoxMzAwLCJ3IjoyMDAsImgiOjkyLCJsYWJlbCI6IlJhZGFyIGhlYWQiLCJvcHRpb25zIjoiU3dlZXAsQWltIn0seyJpZCI6ImxibF92ZXIiLCJ0IjoibGFiZWwiLCJ4IjoxMDYwLCJ5IjoxMDIwLCJ3IjoxMDksImgiOjc5LCJsYWJlbCI6IkZpcm13YXJlIn0seyJpZCI6ImxibF9oZWFydGJlYXQiLCJ0IjoibGFiZWwiLCJ4IjoxMTkwLCJ5IjoxMDIwLCJ3IjoyMzcsImgiOjc2LCJsYWJlbCI6IlVwdGltZSJ9LHsiaWQiOiJ1cGQiLCJ0Ijoic2VsZWN0IiwieCI6MTA2MCwieSI6MTEyMCwidyI6MTgyLCJoIjo5NCwibGFiZWwiOiJUZWxlbWV0cnkiLCJvcHRpb25zIjoiQWxsLEJhc2ljLE9mZiJ9XSwiY2FudmFzIjp7InciOjE2MjEsImgiOjE0NzJ9fQ=="
+// ── PANELS ──────────────────────────────────────────────────────────
+// All five are compiled in; the Level selector switches between them and the
+// robot pushes the new one straight away. Every blob and every id list below
+// is written by tools/gen_levels.py -- edit the layout there, never here.
+//
+// WHY: this micro:bit sends CFG in fixed 18-character chunks about 35ms apart,
+// so the full Expert panel is nearly twelve seconds before a child sees
+// anything. Beginner is a tenth of that. Loading a graph, a radar head control
+// and fourteen system widgets to teach someone which button goes forward is
+// time spent for nothing.
+const CFG_BEGINNER = "eyJ0aXRsZSI6Ik1hcXVlZW4gUmVtb3RlIiwid2lkZ2V0cyI6W3siaWQiOiJncnBfZHJpdmUiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IkRSSVZFIiwiY29sb3IiOiIjMDBkNGZmIiwieCI6MjQsInkiOjI0LCJ3Ijo4MTUsImgiOjUzOCwiY2hpbGRyZW4iOiJkcGFkX21vdmUsYnRuX3N0b3AifSx7ImlkIjoiZHBhZF9tb3ZlIiwidCI6ImRwYWQiLCJ4Ijo0OCwieSI6ODIsInciOjQ0OSwiaCI6NDU2LCJsYWJlbCI6IkRyaXZlIiwibW9kZWwiOiJjbGFzc2ljIn0seyJpZCI6ImJ0bl9zdG9wIiwidCI6ImJ1dHRvbiIsIngiOjcwOCwieSI6ODIsInciOjEwNywiaCI6MTE1LCJsYWJlbCI6IlNUT1AifSx7ImlkIjoiZ3JwX2Rpc3QiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IkRJU1RBTkNFIiwiY29sb3IiOiIjZmZiMDIwIiwieCI6ODcxLCJ5IjoyNCwidyI6NDI4LCJoIjoyNjksImNoaWxkcmVuIjoiZ2F1Z2VfZGlzdCxhbGVydCJ9LHsiaWQiOiJnYXVnZV9kaXN0IiwidCI6ImdhdWdlIiwieCI6ODk1LCJ5Ijo4MiwidyI6MjY0LCJoIjoxODcsImxhYmVsIjoiRGlzdGFuY2UiLCJtaW4iOjAsIm1heCI6MjAwLCJ1bml0cyI6ImNtIiwiZGVjaW1hbHMiOjAsIm1vZGVsIjoiY2xhc3NpYyJ9LHsiaWQiOiJhbGVydCIsInQiOiJub3RpZmljYXRpb24iLCJ4IjoxMTg1LCJ5Ijo4MiwidyI6OTAsImgiOjE4NiwibGFiZWwiOiJBbGVydCJ9LHsiaWQiOiJncnBfc3lzIiwidCI6Imdyb3VwIiwibGFiZWwiOiJTWVNURU0iLCJjb2xvciI6IiM4ODkyYjAiLCJ4IjoyNCwieSI6NTk0LCJ3Ijo0MTgsImgiOjI3NiwiY2hpbGRyZW4iOiJsYmxfdmVyLGxldmVsIn0seyJpZCI6ImxibF92ZXIiLCJ0IjoibGFiZWwiLCJ4Ijo0OCwieSI6NjUyLCJ3IjoxMDksImgiOjc5LCJsYWJlbCI6IkZpcm13YXJlIn0seyJpZCI6ImxldmVsIiwidCI6InNlbGVjdCIsIngiOjIzOCwieSI6NzUyLCJ3IjoxODAsImgiOjk0LCJsYWJlbCI6IkxldmVsIiwib3B0aW9ucyI6IkJlZ2lubmVyLERyaXZlLERpc3RhbmNlLFNjcmVlbixFeHBlcnQifV0sImNhbnZhcyI6eyJ3IjoxMzU1LCJoIjo5MjZ9fQ=="
+const CFG_DRIVE = "eyJ0aXRsZSI6Ik1hcXVlZW4gUmVtb3RlIiwid2lkZ2V0cyI6W3siaWQiOiJncnBfZHJpdmUiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IkRSSVZFIiwiY29sb3IiOiIjMDBkNGZmIiwieCI6MjQsInkiOjI0LCJ3Ijo5MzcsImgiOjY4MiwiY2hpbGRyZW4iOiJkcGFkX21vdmUsc3BkLGJ0bl9zdG9wLGdhdWdlX3NwZCxidG5fbWwsYnRuX21yIn0seyJpZCI6ImRwYWRfbW92ZSIsInQiOiJkcGFkIiwieCI6NDgsInkiOjgyLCJ3Ijo0NDksImgiOjQ1NiwibGFiZWwiOiJEcml2ZSIsIm1vZGVsIjoiY2xhc3NpYyJ9LHsiaWQiOiJzcGQiLCJ0Ijoic2xpZGVyIiwieCI6NTI4LCJ5Ijo4MiwidyI6MTQ4LCJoIjoyNjIsImxhYmVsIjoiU3BlZWQiLCJtaW4iOjYwLCJtYXgiOjI1NSwic3RlcCI6NSwidmFsdWUiOjIwMH0seyJpZCI6ImJ0bl9zdG9wIiwidCI6ImJ1dHRvbiIsIngiOjcwOCwieSI6ODIsInciOjEwNywiaCI6MTE1LCJsYWJlbCI6IlNUT1AifSx7ImlkIjoiZ2F1Z2Vfc3BkIiwidCI6ImdhdWdlIiwieCI6NzA4LCJ5IjoyMzIsInciOjIyOSwiaCI6MjUyLCJsYWJlbCI6IlNwZWVkIiwibWluIjo2MCwibWF4IjoyNTUsInVuaXRzIjoiIiwiZGVjaW1hbHMiOjAsIm1vZGVsIjoibWluIiwic291cmNlIjoic3BkIiwidmFsdWUiOjIwMH0seyJpZCI6ImJ0bl9tbCIsInQiOiJidXR0b24iLCJ4Ijo0OCwieSI6NTYyLCJ3IjoyMDAsImgiOjEyMCwibGFiZWwiOiJMZWZ0IG1vdG9yIiwiaWNvbiI6IuKame+4jyIsInNwaW4iOi0xLCJjb2xvciI6IiMwZTc0OTAifSx7ImlkIjoiYnRuX21yIiwidCI6ImJ1dHRvbiIsIngiOjI2OCwieSI6NTYyLCJ3IjoyMDAsImgiOjEyMCwibGFiZWwiOiJSaWdodCBtb3RvciIsImljb24iOiLimpnvuI8iLCJzcGluIjoxLCJjb2xvciI6IiMwZTc0OTAifSx7ImlkIjoiZ3JwX2F1dG8iLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IkFVVE9OT01ZIiwiY29sb3IiOiIjMDBlNjc2IiwieCI6OTkzLCJ5IjoyNCwidyI6MjI3LCJoIjoxNzQsImNoaWxkcmVuIjoibW9kZSJ9LHsiaWQiOiJtb2RlIiwidCI6InNlbGVjdCIsIngiOjEwMTcsInkiOjgyLCJ3IjoxNzksImgiOjkyLCJsYWJlbCI6Ik1vZGUiLCJvcHRpb25zIjoiTWFudWFsLExpbmUsQXZvaWQifSx7ImlkIjoiZ3JwX3N5cyIsInQiOiJncm91cCIsImxhYmVsIjoiU1lTVEVNIiwiY29sb3IiOiIjODg5MmIwIiwieCI6MTI1MiwieSI6MjQsInciOjIyOCwiaCI6MTc2LCJjaGlsZHJlbiI6ImxldmVsIn0seyJpZCI6ImxldmVsIiwidCI6InNlbGVjdCIsIngiOjEyNzYsInkiOjgyLCJ3IjoxODAsImgiOjk0LCJsYWJlbCI6IkxldmVsIiwib3B0aW9ucyI6IkJlZ2lubmVyLERyaXZlLERpc3RhbmNlLFNjcmVlbixFeHBlcnQifV0sImNhbnZhcyI6eyJ3IjoxNTM2LCJoIjo3NjJ9fQ=="
+const CFG_DIST = "eyJ0aXRsZSI6Ik1hcXVlZW4gUmVtb3RlIiwid2lkZ2V0cyI6W3siaWQiOiJncnBfZGlzdCIsInQiOiJncm91cCIsImxhYmVsIjoiRElTVEFOQ0UiLCJjb2xvciI6IiNmZmIwMjAiLCJ4IjoyNCwieSI6MjQsInciOjUyOSwiaCI6NjgwLCJjaGlsZHJlbiI6ImdhdWdlX2Rpc3QsYWxlcnQsZGlzdF9yZWFkLGdyYXBoX2Rpc3QifSx7ImlkIjoiZ2F1Z2VfZGlzdCIsInQiOiJnYXVnZSIsIngiOjQ4LCJ5Ijo4MiwidyI6MjY0LCJoIjoxODcsImxhYmVsIjoiRGlzdGFuY2UiLCJtaW4iOjAsIm1heCI6MjAwLCJ1bml0cyI6ImNtIiwiZGVjaW1hbHMiOjAsIm1vZGVsIjoiY2xhc3NpYyJ9LHsiaWQiOiJhbGVydCIsInQiOiJub3RpZmljYXRpb24iLCJ4IjozMzgsInkiOjgyLCJ3Ijo5MCwiaCI6MTg2LCJsYWJlbCI6IkFsZXJ0In0seyJpZCI6ImRpc3RfcmVhZCIsInQiOiJzZWxlY3QiLCJ4Ijo0OCwieSI6MzAyLCJ3IjoxOTQsImgiOjYyLCJsYWJlbCI6IkRpc3RhbmNlIHJlYWQiLCJvcHRpb25zIjoiQXV0byxSZWFkIG5vdyJ9LHsiaWQiOiJncmFwaF9kaXN0IiwidCI6ImdyYXBoIiwieCI6NDgsInkiOjM4MiwidyI6NDgxLCJoIjoyOTgsImxhYmVsIjoiRGlzdGFuY2UgY20iLCJtb2RlbCI6ImdyaWQiLCJ3aW5kb3dTZWMiOjMwLCJzZXJpZXMiOjF9LHsiaWQiOiJncnBfYXV0byIsInQiOiJncm91cCIsImxhYmVsIjoiQVVUT05PTVkiLCJjb2xvciI6IiMwMGU2NzYiLCJ4Ijo1ODUsInkiOjI0LCJ3IjoyMjIsImgiOjE4NywiY2hpbGRyZW4iOiJsbl9sLGxuX3IifSx7ImlkIjoibG5fbCIsInQiOiJsZWQiLCJ4Ijo2MDksInkiOjgyLCJ3Ijo3NiwiaCI6MTA1LCJsYWJlbCI6IkxpbmUgTCIsIm1vZGVsIjoiZG90IiwiY29sb3JPbiI6IiM0YWRlODAifSx7ImlkIjoibG5fciIsInQiOiJsZWQiLCJ4Ijo3MDUsInkiOjgyLCJ3Ijo3OCwiaCI6MTA1LCJsYWJlbCI6IkxpbmUgUiIsIm1vZGVsIjoiZG90IiwiY29sb3JPbiI6IiM0YWRlODAifSx7ImlkIjoiZ3JwX3N5cyIsInQiOiJncm91cCIsImxhYmVsIjoiU1lTVEVNIiwiY29sb3IiOiIjODg5MmIwIiwieCI6ODM5LCJ5IjoyNCwidyI6MjI4LCJoIjoxNzYsImNoaWxkcmVuIjoibGV2ZWwifSx7ImlkIjoibGV2ZWwiLCJ0Ijoic2VsZWN0IiwieCI6ODYzLCJ5Ijo4MiwidyI6MTgwLCJoIjo5NCwibGFiZWwiOiJMZXZlbCIsIm9wdGlvbnMiOiJCZWdpbm5lcixEcml2ZSxEaXN0YW5jZSxTY3JlZW4sRXhwZXJ0In1dLCJjYW52YXMiOnsidyI6MTEyMywiaCI6NzYwfX0="
+const CFG_SCREEN = "eyJ0aXRsZSI6Ik1hcXVlZW4gUmVtb3RlIiwid2lkZ2V0cyI6W3siaWQiOiJncnBfaGVhZCIsInQiOiJncm91cCIsImxhYmVsIjoiSEVBRCIsImNvbG9yIjoiI2ZmOTUwMCIsIngiOjI0LCJ5IjoyNCwidyI6MzMyLCJoIjoyODUsImNoaWxkcmVuIjoic2xpZGVyX3NydjEsZ2F1Z2Vfc3J2MSJ9LHsiaWQiOiJzbGlkZXJfc3J2MSIsInQiOiJzbGlkZXIiLCJ4Ijo0OCwieSI6ODIsInciOjk5LCJoIjoyMDMsImxhYmVsIjoiU2Vydm8gMSIsIm1pbiI6MCwibWF4IjoxODAsInN0ZXAiOjEsInZhbHVlIjo5MH0seyJpZCI6ImdhdWdlX3NydjEiLCJ0IjoiZ2F1Z2UiLCJ4IjoxNjgsInkiOjgyLCJ3IjoxNjQsImgiOjE4NSwibGFiZWwiOiJTZXJ2byAxIiwibWluIjowLCJtYXgiOjE4MCwidW5pdHMiOiLCsCIsImRlY2ltYWxzIjowLCJtb2RlbCI6Im1pbiIsInNvdXJjZSI6InNsaWRlcl9zcnYxIiwidmFsdWUiOjkwfSx7ImlkIjoiZ3JwX3NjciIsInQiOiJncm91cCIsImxhYmVsIjoiU0NSRUVOIiwiY29sb3IiOiIjMzhiZGY4IiwieCI6Mzg4LCJ5IjoyNCwidyI6ODg4LCJoIjoyOTQsImNoaWxkcmVuIjoic2NyZWVuX21vZGUsb2xlZF90ZXh0LGxibF9vbGVkLGZhY2Vfc3R5bGUsaGVhZF9tb2RlIn0seyJpZCI6InNjcmVlbl9tb2RlIiwidCI6InNlbGVjdCIsIngiOjQxMiwieSI6ODIsInciOjIwMCwiaCI6OTIsImxhYmVsIjoiU2NyZWVuIiwib3B0aW9ucyI6IlN0YXR1cyxGYWNlLEF1dG8sUmFkYXIifSx7ImlkIjoib2xlZF90ZXh0IiwidCI6ImVkaXRmaWVsZCIsIngiOjY1MiwieSI6ODIsInciOjMyMCwiaCI6OTIsImxhYmVsIjoiTWVzc2FnZSJ9LHsiaWQiOiJsYmxfb2xlZCIsInQiOiJsYWJlbCIsIngiOjEwMTIsInkiOjgyLCJ3IjoyNDAsImgiOjkyLCJsYWJlbCI6Ik9uIHNjcmVlbiJ9LHsiaWQiOiJmYWNlX3N0eWxlIiwidCI6InNlbGVjdCIsIngiOjQxMiwieSI6MjAyLCJ3IjoyMDAsImgiOjkyLCJsYWJlbCI6IkZhY2Ugc3R5bGUiLCJvcHRpb25zIjoiUm91bmQsQ2lyY2xlLFJvYm90LEJpZyxWaXNvciJ9LHsiaWQiOiJoZWFkX21vZGUiLCJ0Ijoic2VsZWN0IiwieCI6NjUyLCJ5IjoyMDIsInciOjIwMCwiaCI6OTIsImxhYmVsIjoiUmFkYXIgaGVhZCIsIm9wdGlvbnMiOiJTd2VlcCxBaW0ifSx7ImlkIjoiZ3JwX3N5cyIsInQiOiJncm91cCIsImxhYmVsIjoiU1lTVEVNIiwiY29sb3IiOiIjODg5MmIwIiwieCI6MTMwOCwieSI6MjQsInciOjIyOCwiaCI6MTc2LCJjaGlsZHJlbiI6ImxldmVsIn0seyJpZCI6ImxldmVsIiwidCI6InNlbGVjdCIsIngiOjEzMzIsInkiOjgyLCJ3IjoxODAsImgiOjk0LCJsYWJlbCI6IkxldmVsIiwib3B0aW9ucyI6IkJlZ2lubmVyLERyaXZlLERpc3RhbmNlLFNjcmVlbixFeHBlcnQifV0sImNhbnZhcyI6eyJ3IjoxNTkyLCJoIjozNzR9fQ=="
+const CFG_EXPERT = "eyJ0aXRsZSI6Ik1hcXVlZW4gUmVtb3RlIiwid2lkZ2V0cyI6W3siaWQiOiJncnBfZHJpdmUiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IkRSSVZFIiwiY29sb3IiOiIjMDBkNGZmIiwieCI6NTYsInkiOjQyLCJ3Ijo5MzcsImgiOjY4MiwiY2hpbGRyZW4iOiJkcGFkX21vdmUsc3BkLGJ0bl9zdG9wLGdhdWdlX3NwZCxidG5fbWwsYnRuX21yIn0seyJpZCI6ImdycF9oZWFkIiwidCI6Imdyb3VwIiwibGFiZWwiOiJIRUFEIiwiY29sb3IiOiIjZmY5NTAwIiwieCI6NTYsInkiOjc2MiwidyI6NjYxLCJoIjoyODUsImNoaWxkcmVuIjoic2xpZGVyX3NydjEsZ2F1Z2Vfc3J2MSxzbGlkZXJfc3J2MixnYXVnZV9zcnYyIn0seyJpZCI6ImdycF9saWdodCIsInQiOiJncm91cCIsImxhYmVsIjoiTElHSFRTICYgU09VTkQiLCJjb2xvciI6IiNjMDg0ZmMiLCJ4Ijo3MzYsInkiOjc2MiwidyI6MjYyLCJoIjozNDgsImNoaWxkcmVuIjoidG9nZ2xlX2xlZF9sLHRvZ2dsZV9sZWRfcixidG5fYnV6eiJ9LHsiaWQiOiJncnBfZGlzdCIsInQiOiJncm91cCIsImxhYmVsIjoiRElTVEFOQ0UiLCJjb2xvciI6IiNmZmIwMjAiLCJ4IjoxMDM2LCJ5Ijo0MiwidyI6NTI5LCJoIjo2ODAsImNoaWxkcmVuIjoiZ2F1Z2VfZGlzdCxhbGVydCxkaXN0X3JlYWQsZ3JhcGhfZGlzdCJ9LHsiaWQiOiJncnBfYXV0byIsInQiOiJncm91cCIsImxhYmVsIjoiQVVUT05PTVkiLCJjb2xvciI6IiMwMGU2NzYiLCJ4IjoxMDM2LCJ5Ijo3NTIsInciOjQyMSwiaCI6MTg3LCJjaGlsZHJlbiI6ImxuX2wsbG5fcixtb2RlIn0seyJpZCI6ImdycF9zY3IiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IlNDUkVFTiIsImNvbG9yIjoiIzM4YmRmOCIsIngiOjU2LCJ5IjoxMTIyLCJ3Ijo4ODgsImgiOjI5NCwiY2hpbGRyZW4iOiJzY3JlZW5fbW9kZSxvbGVkX3RleHQsbGJsX29sZWQsZmFjZV9zdHlsZSxoZWFkX21vZGUifSx7ImlkIjoiZ3JwX3N5cyIsInQiOiJncm91cCIsImxhYmVsIjoiU1lTVEVNIiwiY29sb3IiOiIjODg5MmIwIiwieCI6MTAzNiwieSI6OTYyLCJ3Ijo0MTgsImgiOjI3NiwiY2hpbGRyZW4iOiJsYmxfdmVyLGxibF9oZWFydGJlYXQsdXBkLGxldmVsIn0seyJpZCI6InNlcF9jb2xzIiwidCI6InNlcGFyYXRvciIsIngiOjEwMTIsInkiOjEwMCwidyI6OCwiaCI6NjgwfSx7ImlkIjoic2VwX2xlZnQiLCJ0Ijoic2VwYXJhdG9yIiwieCI6ODAsInkiOjc0NSwidyI6ODkwLCJoIjo4fSx7ImlkIjoic2VwX3J0MSIsInQiOiJzZXBhcmF0b3IiLCJ4IjoxMDYwLCJ5Ijo3MzAsInciOjQ5MCwiaCI6OH0seyJpZCI6InNlcF9ydDIiLCJ0Ijoic2VwYXJhdG9yIiwieCI6MTA2MCwieSI6OTQ2LCJ3Ijo0OTAsImgiOjh9LHsiaWQiOiJkcGFkX21vdmUiLCJ0IjoiZHBhZCIsIngiOjgwLCJ5IjoxMDAsInciOjQ0OSwiaCI6NDU2LCJsYWJlbCI6IkRyaXZlIiwibW9kZWwiOiJjbGFzc2ljIn0seyJpZCI6InNwZCIsInQiOiJzbGlkZXIiLCJ4Ijo1NjAsInkiOjEwMCwidyI6MTQ4LCJoIjoyNjIsImxhYmVsIjoiU3BlZWQiLCJtaW4iOjYwLCJtYXgiOjI1NSwic3RlcCI6NSwidmFsdWUiOjIwMH0seyJpZCI6ImJ0bl9zdG9wIiwidCI6ImJ1dHRvbiIsIngiOjc0MCwieSI6MTAwLCJ3IjoxMDcsImgiOjExNSwibGFiZWwiOiJTVE9QIn0seyJpZCI6ImdhdWdlX3NwZCIsInQiOiJnYXVnZSIsIngiOjc0MCwieSI6MjUwLCJ3IjoyMjksImgiOjI1MiwibGFiZWwiOiJTcGVlZCIsIm1pbiI6NjAsIm1heCI6MjU1LCJ1bml0cyI6IiIsImRlY2ltYWxzIjowLCJtb2RlbCI6Im1pbiIsInNvdXJjZSI6InNwZCIsInZhbHVlIjoyMDB9LHsiaWQiOiJidG5fbWwiLCJ0IjoiYnV0dG9uIiwieCI6ODAsInkiOjU4MCwidyI6MjAwLCJoIjoxMjAsImxhYmVsIjoiTGVmdCBtb3RvciIsImljb24iOiLimpnvuI8iLCJzcGluIjotMSwiY29sb3IiOiIjMGU3NDkwIn0seyJpZCI6ImJ0bl9tciIsInQiOiJidXR0b24iLCJ4IjozMDAsInkiOjU4MCwidyI6MjAwLCJoIjoxMjAsImxhYmVsIjoiUmlnaHQgbW90b3IiLCJpY29uIjoi4pqZ77iPIiwic3BpbiI6MSwiY29sb3IiOiIjMGU3NDkwIn0seyJpZCI6InNsaWRlcl9zcnYxIiwidCI6InNsaWRlciIsIngiOjgwLCJ5Ijo4MjAsInciOjk5LCJoIjoyMDMsImxhYmVsIjoiU2Vydm8gMSIsIm1pbiI6MCwibWF4IjoxODAsInN0ZXAiOjEsInZhbHVlIjo5MH0seyJpZCI6ImdhdWdlX3NydjEiLCJ0IjoiZ2F1Z2UiLCJ4IjoyMDAsInkiOjgyMCwidyI6MTY0LCJoIjoxODUsImxhYmVsIjoiU2Vydm8gMSIsIm1pbiI6MCwibWF4IjoxODAsInVuaXRzIjoiwrAiLCJkZWNpbWFscyI6MCwibW9kZWwiOiJtaW4iLCJzb3VyY2UiOiJzbGlkZXJfc3J2MSIsInZhbHVlIjo5MH0seyJpZCI6InNsaWRlcl9zcnYyIiwidCI6InNsaWRlciIsIngiOjQwMCwieSI6ODIwLCJ3Ijo5OSwiaCI6MjAxLCJsYWJlbCI6IlNlcnZvIDIiLCJtaW4iOjAsIm1heCI6MTgwLCJzdGVwIjoxLCJ2YWx1ZSI6OTB9LHsiaWQiOiJnYXVnZV9zcnYyIiwidCI6ImdhdWdlIiwieCI6NTIwLCJ5Ijo4MjAsInciOjE3MywiaCI6MTgxLCJsYWJlbCI6IlNlcnZvIDIiLCJtaW4iOjAsIm1heCI6MTgwLCJ1bml0cyI6IsKwIiwiZGVjaW1hbHMiOjAsIm1vZGVsIjoibWluIiwic291cmNlIjoic2xpZGVyX3NydjIiLCJ2YWx1ZSI6OTB9LHsiaWQiOiJ0b2dnbGVfbGVkX2wiLCJ0IjoidG9nZ2xlIiwieCI6NzYwLCJ5Ijo4MjAsInciOjk3LCJoIjoxMjEsImxhYmVsIjoiTEVEIEwifSx7ImlkIjoidG9nZ2xlX2xlZF9yIiwidCI6InRvZ2dsZSIsIngiOjg3NywieSI6ODIwLCJ3Ijo5NywiaCI6MTIxLCJsYWJlbCI6IkxFRCBSIn0seyJpZCI6ImJ0bl9idXp6IiwidCI6ImJ1dHRvbiIsIngiOjc2MCwieSI6OTY1LCJ3IjoxMDgsImgiOjEyMSwibGFiZWwiOiJCdXp6In0seyJpZCI6ImdhdWdlX2Rpc3QiLCJ0IjoiZ2F1Z2UiLCJ4IjoxMDYwLCJ5IjoxMDAsInciOjI2NCwiaCI6MTg3LCJsYWJlbCI6IkRpc3RhbmNlIiwibWluIjowLCJtYXgiOjIwMCwidW5pdHMiOiJjbSIsImRlY2ltYWxzIjowLCJtb2RlbCI6ImNsYXNzaWMifSx7ImlkIjoiYWxlcnQiLCJ0Ijoibm90aWZpY2F0aW9uIiwieCI6MTM1MCwieSI6MTAwLCJ3Ijo5MCwiaCI6MTg2LCJsYWJlbCI6IkFsZXJ0In0seyJpZCI6ImRpc3RfcmVhZCIsInQiOiJzZWxlY3QiLCJ4IjoxMDYwLCJ5IjozMjAsInciOjE5NCwiaCI6NjIsImxhYmVsIjoiRGlzdGFuY2UgcmVhZCIsIm9wdGlvbnMiOiJBdXRvLFJlYWQgbm93In0seyJpZCI6ImdyYXBoX2Rpc3QiLCJ0IjoiZ3JhcGgiLCJ4IjoxMDYwLCJ5Ijo0MDAsInciOjQ4MSwiaCI6Mjk4LCJsYWJlbCI6IkRpc3RhbmNlIGNtIiwibW9kZWwiOiJncmlkIiwid2luZG93U2VjIjozMCwic2VyaWVzIjoxfSx7ImlkIjoibG5fbCIsInQiOiJsZWQiLCJ4IjoxMDYwLCJ5Ijo4MTAsInciOjc2LCJoIjoxMDUsImxhYmVsIjoiTGluZSBMIiwibW9kZWwiOiJkb3QiLCJjb2xvck9uIjoiIzRhZGU4MCJ9LHsiaWQiOiJsbl9yIiwidCI6ImxlZCIsIngiOjExNTYsInkiOjgxMCwidyI6NzgsImgiOjEwNSwibGFiZWwiOiJMaW5lIFIiLCJtb2RlbCI6ImRvdCIsImNvbG9yT24iOiIjNGFkZTgwIn0seyJpZCI6Im1vZGUiLCJ0Ijoic2VsZWN0IiwieCI6MTI1NCwieSI6ODIwLCJ3IjoxNzksImgiOjkyLCJsYWJlbCI6Ik1vZGUiLCJvcHRpb25zIjoiTWFudWFsLExpbmUsQXZvaWQifSx7ImlkIjoic2NyZWVuX21vZGUiLCJ0Ijoic2VsZWN0IiwieCI6ODAsInkiOjExODAsInciOjIwMCwiaCI6OTIsImxhYmVsIjoiU2NyZWVuIiwib3B0aW9ucyI6IlN0YXR1cyxGYWNlLEF1dG8sUmFkYXIifSx7ImlkIjoib2xlZF90ZXh0IiwidCI6ImVkaXRmaWVsZCIsIngiOjMyMCwieSI6MTE4MCwidyI6MzIwLCJoIjo5MiwibGFiZWwiOiJNZXNzYWdlIn0seyJpZCI6ImxibF9vbGVkIiwidCI6ImxhYmVsIiwieCI6NjgwLCJ5IjoxMTgwLCJ3IjoyNDAsImgiOjkyLCJsYWJlbCI6Ik9uIHNjcmVlbiJ9LHsiaWQiOiJmYWNlX3N0eWxlIiwidCI6InNlbGVjdCIsIngiOjgwLCJ5IjoxMzAwLCJ3IjoyMDAsImgiOjkyLCJsYWJlbCI6IkZhY2Ugc3R5bGUiLCJvcHRpb25zIjoiUm91bmQsQ2lyY2xlLFJvYm90LEJpZyxWaXNvciJ9LHsiaWQiOiJoZWFkX21vZGUiLCJ0Ijoic2VsZWN0IiwieCI6MzIwLCJ5IjoxMzAwLCJ3IjoyMDAsImgiOjkyLCJsYWJlbCI6IlJhZGFyIGhlYWQiLCJvcHRpb25zIjoiU3dlZXAsQWltIn0seyJpZCI6ImxibF92ZXIiLCJ0IjoibGFiZWwiLCJ4IjoxMDYwLCJ5IjoxMDIwLCJ3IjoxMDksImgiOjc5LCJsYWJlbCI6IkZpcm13YXJlIn0seyJpZCI6ImxibF9oZWFydGJlYXQiLCJ0IjoibGFiZWwiLCJ4IjoxMTkwLCJ5IjoxMDIwLCJ3IjoyMzcsImgiOjc2LCJsYWJlbCI6IlVwdGltZSJ9LHsiaWQiOiJ1cGQiLCJ0Ijoic2VsZWN0IiwieCI6MTA2MCwieSI6MTEyMCwidyI6MTgyLCJoIjo5NCwibGFiZWwiOiJUZWxlbWV0cnkiLCJvcHRpb25zIjoiQWxsLEJhc2ljLE9mZiJ9LHsiaWQiOiJsZXZlbCIsInQiOiJzZWxlY3QiLCJ4IjoxMjUwLCJ5IjoxMTIwLCJ3IjoxODAsImgiOjk0LCJsYWJlbCI6IkxldmVsIiwib3B0aW9ucyI6IkJlZ2lubmVyLERyaXZlLERpc3RhbmNlLFNjcmVlbixFeHBlcnQifV0sImNhbnZhcyI6eyJ3IjoxNjIxLCJoIjoxNDcyfX0="
+
+// Comma-wrapped id lists of each panel, so telemetry can skip anything the
+// panel on screen cannot display. On a link this slow, publishing a value
+// nobody can see is not free.
+const IDS_BEGINNER = ",dpad_move,btn_stop,gauge_dist,alert,lbl_ver,level,"
+const IDS_DRIVE = ",dpad_move,spd,btn_stop,gauge_spd,btn_ml,btn_mr,mode,level,"
+const IDS_DIST = ",gauge_dist,alert,dist_read,graph_dist,ln_l,ln_r,level,"
+const IDS_SCREEN = ",slider_srv1,gauge_srv1,screen_mode,oled_text,lbl_oled,face_style,head_mode,level,"
+const IDS_EXPERT = ",dpad_move,spd,btn_stop,gauge_spd,btn_ml,btn_mr,slider_srv1,gauge_srv1,slider_srv2,gauge_srv2,toggle_led_l,toggle_led_r,btn_buzz,gauge_dist,alert,dist_read,graph_dist,ln_l,ln_r,mode,screen_mode,oled_text,lbl_oled,face_style,head_mode,lbl_ver,lbl_heartbeat,upd,level,"
+
+const LAYOUT_BEGINNER = 0
+const LAYOUT_DRIVE = 1
+const LAYOUT_DIST = 2
+const LAYOUT_SCREEN = 3
+const LAYOUT_EXPERT = 4
+let layoutLevel = LAYOUT_EXPERT
+
+// Deliberately `let`, and deliberately still called CFG: every line that
+// chunks the transfer already reads CFG.length and CFG.substr(), so pointing
+// this at a different blob switches panels without touching the transfer code.
+let CFG = CFG_EXPERT
+let activeIds = IDS_EXPERT
+
+// Wrapped in commas on both sides so "spd" cannot match "gauge_spd".
+function onPanel(id: string): boolean {
+    return activeIds.indexOf("," + id + ",") >= 0
+}
+
+// Declared BEFORE applyLayout rather than after it, and this order is
+// load-bearing twice over. Static TypeScript rejects the forward reference,
+// and even if it did not, a `let` initialiser sitting below the bootstrap call
+// would run second and quietly reset the revision to "" after applyLayout had
+// just computed it -- leaving the robot advertising an empty CFGVER that no
+// cache could ever match.
 // v52: computed from CFG itself at boot.
-let CFG_REV = cfgRevisionFromCfg(CFG)
+let CFG_REV = ""
+
+function applyLayout(level: number) {
+    layoutLevel = level
+    if (level == LAYOUT_BEGINNER) { CFG = CFG_BEGINNER; activeIds = IDS_BEGINNER }
+    else if (level == LAYOUT_DRIVE) { CFG = CFG_DRIVE; activeIds = IDS_DRIVE }
+    else if (level == LAYOUT_DIST) { CFG = CFG_DIST; activeIds = IDS_DIST }
+    else if (level == LAYOUT_SCREEN) { CFG = CFG_SCREEN; activeIds = IDS_SCREEN }
+    else { CFG = CFG_EXPERT; activeIds = IDS_EXPERT }
+    // Computed from whichever blob is active, so switching panel changes the
+    // revision too and the app cannot serve a cached copy of the wrong one.
+    CFG_REV = cfgRevisionFromCfg(CFG)
+}
+
+// CFG_REV starts empty and is only ever filled in here, so the panel and its
+// revision cannot disagree -- there is no path that sets one without the other.
+applyLayout(LAYOUT_EXPERT)
 
 // ═══════════════════════════════════════════════════════════════
 // 📡 BLUETOOTH COMMUNICATION
@@ -1825,6 +1909,40 @@ function handleWidget(id: string, val: string) {
         dbg("distance: forced one-shot requested")
     }
 
+    // Select: Level — which panel the robot serves.
+    //
+    // Switching pushes the new layout straight away rather than waiting for a
+    // reconnect. Only the flags are set here; the transfer itself runs from
+    // the loop, for the same reason GETCFG does -- streaming a layout from
+    // inside the receive callback is what broke reconnects historically.
+    if (id == "level") {
+        let want = LAYOUT_EXPERT
+        if (val == "Beginner") want = LAYOUT_BEGINNER
+        else if (val == "Drive") want = LAYOUT_DRIVE
+        else if (val == "Distance") want = LAYOUT_DIST
+        else if (val == "Screen") want = LAYOUT_SCREEN
+        if (want != layoutLevel) {
+            // Never change panel with the wheels turning: the controls that
+            // issued the current command are about to stop existing.
+            maqueen.motorStop(maqueen.Motors.All)
+            lastDriveL = 0
+            lastDriveR = 0
+            clearJog()
+            btnFwd = false; btnBack = false; btnLeft = false; btnRight = false
+            applyLayout(want)
+            cfgSent = false
+            cfgTxActive = true
+            cfgTxStage = 0
+            cfgTxPos = 0
+            cfgTxChunkIdx = 0
+            cfgTxLit = 0
+            cfgTxNextAt = input.runningTime() + 20
+            basic.clearScreen()
+            dbg("level -> " + val)
+        }
+        return
+    }
+
     // Select: Screen — Status / Face / Auto. The same three the button on the
     // robot cycles, so either can drive it and both stay in step.
     if (id == "screen_mode") {
@@ -1995,6 +2113,10 @@ function sendValue(id: string, val: string) {
     // why writing to a dead UART is not merely wasteful but blocking.
     if (!btConnected || !cfgSent) return
     if (updLevel == UPD_OFF) return
+    // Nothing the panel on screen cannot display. Beginner has no graph, so
+    // publishing a distance sample to it spends 18 characters of a very slow
+    // link on a widget that does not exist.
+    if (!onPanel(id)) return
     // Basic keeps the uptime clock and the version label — the two that
     // answer "is it alive?" and "what is flashed?" — and drops the rest.
     if (updLevel == UPD_BASIC && id != "lbl_heartbeat" && id != "lbl_ver") return
@@ -2474,8 +2596,13 @@ basic.forever(function () {
                     : screenMode == SCREEN_AUTO ? "Auto"
                     : screenMode == SCREEN_RADAR ? "Radar" : "Status")
             else if (uiInitialSyncStage == 8) sendUiValue("lbl_oled", oledCurrent())
+            else if (uiInitialSyncStage == 9) sendUiValue("level",
+                layoutLevel == LAYOUT_BEGINNER ? "Beginner"
+                    : layoutLevel == LAYOUT_DRIVE ? "Drive"
+                    : layoutLevel == LAYOUT_DIST ? "Distance"
+                    : layoutLevel == LAYOUT_SCREEN ? "Screen" : "Expert")
             uiInitialSyncStage += 1
-            if (uiInitialSyncStage > 8) uiInitialSyncStage = 0
+            if (uiInitialSyncStage > 9) uiInitialSyncStage = 0
             uiGaugeTxNextAt = now + UI_GAUGE_TX_GAP_MS
             uiSent = true
         } else if (now - uiGaugeLastInputAt >= UI_GAUGE_SETTLE_MS) {

@@ -1,3 +1,51 @@
+# Firmware v62 — Level, so a beginner does not wait twelve seconds
+
+The rover's Level selector, on the Maqueen. Five panels are compiled in and the
+robot pushes the new one immediately rather than waiting for a reconnect:
+
+| Level | widgets | load | what it carries |
+|---|---|---|---|
+| Beginner | 6 | ~2.7s | drive pad, stop, distance, alert |
+| Drive | 8 | ~3.6s | the pad, speed, per-wheel jog, mode |
+| Distance | 7 | ~3.3s | gauge, graph, one-shot read, line LEDs |
+| Screen | 8 | ~3.6s | screen mode, message, face style, radar head |
+| Expert | 29 | ~11.9s | everything |
+
+CFG goes out in fixed 18-character chunks about 35ms apart, so the full panel
+is nearly twelve seconds before a child sees anything. Loading a graph, a radar
+head control and fourteen system widgets to teach someone which button goes
+forward is time spent for nothing. **Beginner is a tenth of Expert.**
+
+Telemetry is filtered to the panel on screen as well: publishing a distance
+sample to a Beginner panel that has no graph spends 18 characters of a very
+slow link on a widget that is not there.
+
+## How the panels are built
+
+`gen_levels.py` cuts the subsets out of the finished layout that `gen_layout.py`
+designs, so the two cannot drift: a widget moved in the layout moves in every
+level that carries it, and no level can contain a widget that does not exist in
+the real one.
+
+Subsets are **repacked, not just filtered**. Keeping absolute coordinates would
+inherit the holes where the omitted widgets used to be — Beginner would be four
+controls scattered across a 1621x1472 canvas with nothing in between. Each zone
+keeps its own internal arrangement, which is the part `gen_layout.py` reasoned
+about, and only the zones themselves are re-flowed.
+
+`level` must appear in every panel, and the generator **fails the build** if it
+does not. A selector that existed only in Expert would strand the robot in
+whatever panel you picked until it was reflashed.
+
+## A bug this turned up
+
+`CFG_REV` was declared *below* the `applyLayout()` bootstrap call. Static
+TypeScript rejects the forward reference — but the more interesting half is
+what would have happened if it did not: a `let` initialiser sitting below the
+call runs second, so it would have reset the revision to `""` immediately after
+`applyLayout` computed it, leaving the robot advertising an empty `CFGVER` that
+no cache could ever match. Declared above it now, with the reason written down.
+
 # Firmware v61 — the pairing name, five faces, and the radar
 
 **The Status screen names the robot while it is disconnected.** The browser's

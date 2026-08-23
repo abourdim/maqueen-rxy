@@ -158,6 +158,11 @@ system = [
     at("lbl_ver",       1060, 1020),
     at("lbl_heartbeat", 1190, 1020),
     at("upd",           1060, 1120),
+    # Which panel the robot serves. It has to live in SYSTEM because it has to
+    # live in EVERY level -- see gen_levels.py. A Level selector that appeared
+    # only in Expert would strand the robot in whatever panel you picked.
+    new("level", "select", 1250, 1120, 180, 94, label="Level",
+        options="Beginner,Drive,Distance,Screen,Expert"),
 ]
 
 ZONES = [

@@ -74,9 +74,9 @@
    "color": "#8892b0",
    "x": 1036,
    "y": 962,
-   "w": 415,
+   "w": 418,
    "h": 276,
-   "children": "lbl_ver,lbl_heartbeat,upd"
+   "children": "lbl_ver,lbl_heartbeat,upd,level"
   },
   {
    "id": "sep_cols",
@@ -419,6 +419,16 @@
    "h": 94,
    "label": "Telemetry",
    "options": "All,Basic,Off"
+  },
+  {
+   "id": "level",
+   "t": "select",
+   "x": 1250,
+   "y": 1120,
+   "w": 180,
+   "h": 94,
+   "label": "Level",
+   "options": "Beginner,Drive,Distance,Screen,Expert"
   }
  ],
  "canvas": {
