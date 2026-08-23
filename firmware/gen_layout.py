@@ -138,9 +138,19 @@ auto = [
 # the selector and the button can never disagree.
 screen = [
     new("screen_mode", "select", 80, 1180, 200, 92, label="Screen",
-        options="Status,Face,Auto"),
+        options="Status,Face,Auto,Radar"),
     new("oled_text", "editfield", 320, 1180, 320, 92, label="Message"),
     new("lbl_oled", "label", 680, 1180, 240, 92, label="On screen"),
+    # Five looks, one mood system: the face still blinks, worries and is
+    # startled in every one of them. Second row so the zone stays clear of the
+    # x=1012 gutter rather than reaching across it.
+    new("face_style", "select", 80, 1300, 200, 92, label="Face style",
+        options="Round,Circle,Robot,Big,Visor"),
+    # How the radar's head behaves: panning on its own, or aimed by hand with
+    # the Servo 1 slider. Sweep is the default because a scope that does not
+    # move is just a distance gauge drawn the long way round.
+    new("head_mode", "select", 320, 1300, 200, 92, label="Radar head",
+        options="Sweep,Aim"),
 ]
 
 # ── SYSTEM ──────────────────────────────────────────────────────────────────

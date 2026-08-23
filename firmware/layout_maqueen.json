@@ -64,8 +64,8 @@
    "x": 56,
    "y": 1122,
    "w": 888,
-   "h": 174,
-   "children": "screen_mode,oled_text,lbl_oled"
+   "h": 294,
+   "children": "screen_mode,oled_text,lbl_oled,face_style,head_mode"
   },
   {
    "id": "grp_sys",
@@ -352,7 +352,7 @@
    "w": 200,
    "h": 92,
    "label": "Screen",
-   "options": "Status,Face,Auto"
+   "options": "Status,Face,Auto,Radar"
   },
   {
    "id": "oled_text",
@@ -371,6 +371,26 @@
    "w": 240,
    "h": 92,
    "label": "On screen"
+  },
+  {
+   "id": "face_style",
+   "t": "select",
+   "x": 80,
+   "y": 1300,
+   "w": 200,
+   "h": 92,
+   "label": "Face style",
+   "options": "Round,Circle,Robot,Big,Visor"
+  },
+  {
+   "id": "head_mode",
+   "t": "select",
+   "x": 320,
+   "y": 1300,
+   "w": 200,
+   "h": 92,
+   "label": "Radar head",
+   "options": "Sweep,Aim"
   },
   {
    "id": "lbl_ver",
@@ -403,6 +423,6 @@
  ],
  "canvas": {
   "w": 1621,
-  "h": 1352
+  "h": 1472
  }
 }

@@ -1,3 +1,63 @@
+# Firmware v61 — the pairing name, five faces, and the radar
+
+**The Status screen names the robot while it is disconnected.** The browser's
+chooser lists every board as `BBC micro:bit [xxxxx]` and they all look alike,
+so picking your own out of a classroom was a guess. The row that usually
+carries the drive mode shows `micro:bit zovip` instead while there is no link
+— the mode is meaningless then anyway, since a dropped link resets it to
+Manual. The boot self-test shows the same name, at the first moment anyone
+would want it.
+
+**Five face styles** — Round, Circle, Robot, Big, Visor — from the app's Face
+style selector or button B on the robot. A style is a look, not a behaviour:
+all five blink, worry, startle, sleep and wink, so none of the mood logic
+knows which is in force. Only three things vary between them: how deeply the
+corners are cut, how tall the eye is, and how big the pupil is.
+
+How far the pupils travel is **clamped per style against that style's own
+geometry** rather than by one shared constant. A circular eye has under half
+the room a hard rectangle does, and Visor — a 24-pixel band — has barely any
+vertically. Since the pupil is a hole, one that reaches the border opens the
+eye into a C. Clamping against the geometry rather than tuning five constants
+by eye also means a sixth style cannot reintroduce that bug. Verified across
+every style, mood and gaze extreme: zero border breaks.
+
+**The radar**, ported from the rover, with its Sweep/Aim head control.
+
+> It only means anything **if the ultrasonic is mounted on Servo 1**. Left on
+> the chassis, every reading lands at the same heading and the scope draws a
+> single spoke — which is exactly right, because that is all the robot can see.
+
+Sweep pans the head on its own; Aim hands it to the Servo 1 slider and plots
+wherever you point it. Either way, leaving the radar screen hands the horn back
+to where the slider thinks it is, so the two never disagree.
+
+At 64 rows the scope needed **no stretching**. The rover squashes its half-disc
+sideways by two because a 32-row panel allows only a 31-pixel radius, leaving
+two thirds of the width black. Here the radius reaches 62 and the semicircle is
+true. The same extra height earns a third range ring: the rover draws 30 and
+100 cm only, since at its size a 10 cm ring lands at 7 pixels and merely
+thickens the origin — here it reaches 15 and is worth having. The distance
+scale is the rover's, deliberately non-linear, so the first 10 cm takes a
+quarter of the radius and the robot's own scope agrees with the app's radar
+widget about what "close" looks like.
+
+Blips persist and fade over five seconds, so a sweep builds a picture of the
+room rather than flashing one number. Readings at or past max are never
+plotted: that value means "no echo", and drawing it would paint a wall at full
+range around an empty room.
+
+## Cost
+
+The layout is now 332 chunks, up from 312 — **first connect is about 11.6s**,
+roughly 0.7s more than v60. Only the first pays it; the revision cache answers
+afterwards. Three new widgets: Face style, Radar head, and Radar joining the
+Screen selector.
+
+`DIST_MAX_CM` moved up beside the other distance limits. The radar reads it and
+is drawn from the screen section far above the polling loop that used to own
+it, and static TypeScript rejects use-before-declaration.
+
 # Firmware v60 — the screen comes up first, and the self-test is real
 
 **Boot was not slow; the screen was simply last in the queue.**

@@ -151,8 +151,24 @@
  *    in step: A pushes its new value back to the app, and a fresh connect
  *    reports the mode the robot is really in rather than assuming Status.
  *    Status  text: link, drive mode, speed, motors, distance, line sensors
+ *            -- and while DISCONNECTED, the pairing name, because the
+ *            browser's chooser lists every board as "BBC micro:bit [xxxxx]"
+ *            and picking your own out of a classroom is otherwise a guess
  *    Face    two eyes drawn from a framebuffer, with moods
  *    Auto    Status until the app connects, then Face
+ *    Radar   a sonar map -- REQUIRES THE ULTRASONIC ON SERVO 1. Left on the
+ *            chassis every reading lands at the same heading and the scope
+ *            draws one spoke, which is honestly all the robot can see.
+ *            Radar head: Sweep pans by itself, Aim follows the Servo 1
+ *            slider. Either way, leaving the radar hands the horn back to
+ *            wherever the slider thinks it is.
+ *
+ *    FACE STYLES, cycled by button B or the app's Face style selector:
+ *    Round, Circle, Robot, Big, Visor. A style is a look, not a behaviour --
+ *    all five blink, worry, startle and sleep. How far the pupils can travel
+ *    is CLAMPED per style against that style's own geometry rather than by a
+ *    shared constant: a circular eye has under half a rectangle's room, and a
+ *    pupil is a hole, so one that reaches the border opens the eye into a C.
  *
  *    The app's Message field types onto the glass: while it is set it owns
  *    the top two rows and the status keeps the rest, and clearing it hands
@@ -235,7 +251,7 @@
 // Bump this on every real change and check it (serial log + LED scroll
 // at boot) to confirm what's actually flashed before debugging further —
 // no more guessing whether a fix was really re-flashed.
-const FIRMWARE_VERSION = "v60"
+const FIRMWARE_VERSION = "v61"
 
 // Debug helper — logs ONLY if debugEnabled is true (default false).
 // THIS IS THE ROOT CAUSE of "connected, but nothing happens": pxt-
@@ -431,7 +447,7 @@ function cfgRevisionFromCfg(text: string): string {
     return "d" + (hash >>> 0)
 }
 
-const CFG = "eyJ0aXRsZSI6Ik1hcXVlZW4gUmVtb3RlIiwid2lkZ2V0cyI6W3siaWQiOiJncnBfZHJpdmUiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IkRSSVZFIiwiY29sb3IiOiIjMDBkNGZmIiwieCI6NTYsInkiOjQyLCJ3Ijo5MzcsImgiOjY4MiwiY2hpbGRyZW4iOiJkcGFkX21vdmUsc3BkLGJ0bl9zdG9wLGdhdWdlX3NwZCxidG5fbWwsYnRuX21yIn0seyJpZCI6ImdycF9oZWFkIiwidCI6Imdyb3VwIiwibGFiZWwiOiJIRUFEIiwiY29sb3IiOiIjZmY5NTAwIiwieCI6NTYsInkiOjc2MiwidyI6NjYxLCJoIjoyODUsImNoaWxkcmVuIjoic2xpZGVyX3NydjEsZ2F1Z2Vfc3J2MSxzbGlkZXJfc3J2MixnYXVnZV9zcnYyIn0seyJpZCI6ImdycF9saWdodCIsInQiOiJncm91cCIsImxhYmVsIjoiTElHSFRTICYgU09VTkQiLCJjb2xvciI6IiNjMDg0ZmMiLCJ4Ijo3MzYsInkiOjc2MiwidyI6MjYyLCJoIjozNDgsImNoaWxkcmVuIjoidG9nZ2xlX2xlZF9sLHRvZ2dsZV9sZWRfcixidG5fYnV6eiJ9LHsiaWQiOiJncnBfZGlzdCIsInQiOiJncm91cCIsImxhYmVsIjoiRElTVEFOQ0UiLCJjb2xvciI6IiNmZmIwMjAiLCJ4IjoxMDM2LCJ5Ijo0MiwidyI6NTI5LCJoIjo2ODAsImNoaWxkcmVuIjoiZ2F1Z2VfZGlzdCxhbGVydCxkaXN0X3JlYWQsZ3JhcGhfZGlzdCJ9LHsiaWQiOiJncnBfYXV0byIsInQiOiJncm91cCIsImxhYmVsIjoiQVVUT05PTVkiLCJjb2xvciI6IiMwMGU2NzYiLCJ4IjoxMDM2LCJ5Ijo3NTIsInciOjQyMSwiaCI6MTg3LCJjaGlsZHJlbiI6ImxuX2wsbG5fcixtb2RlIn0seyJpZCI6ImdycF9zY3IiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IlNDUkVFTiIsImNvbG9yIjoiIzM4YmRmOCIsIngiOjU2LCJ5IjoxMTIyLCJ3Ijo4ODgsImgiOjE3NCwiY2hpbGRyZW4iOiJzY3JlZW5fbW9kZSxvbGVkX3RleHQsbGJsX29sZWQifSx7ImlkIjoiZ3JwX3N5cyIsInQiOiJncm91cCIsImxhYmVsIjoiU1lTVEVNIiwiY29sb3IiOiIjODg5MmIwIiwieCI6MTAzNiwieSI6OTYyLCJ3Ijo0MTUsImgiOjI3NiwiY2hpbGRyZW4iOiJsYmxfdmVyLGxibF9oZWFydGJlYXQsdXBkIn0seyJpZCI6InNlcF9jb2xzIiwidCI6InNlcGFyYXRvciIsIngiOjEwMTIsInkiOjEwMCwidyI6OCwiaCI6NjgwfSx7ImlkIjoic2VwX2xlZnQiLCJ0Ijoic2VwYXJhdG9yIiwieCI6ODAsInkiOjc0NSwidyI6ODkwLCJoIjo4fSx7ImlkIjoic2VwX3J0MSIsInQiOiJzZXBhcmF0b3IiLCJ4IjoxMDYwLCJ5Ijo3MzAsInciOjQ5MCwiaCI6OH0seyJpZCI6InNlcF9ydDIiLCJ0Ijoic2VwYXJhdG9yIiwieCI6MTA2MCwieSI6OTQ2LCJ3Ijo0OTAsImgiOjh9LHsiaWQiOiJkcGFkX21vdmUiLCJ0IjoiZHBhZCIsIngiOjgwLCJ5IjoxMDAsInciOjQ0OSwiaCI6NDU2LCJsYWJlbCI6IkRyaXZlIiwibW9kZWwiOiJjbGFzc2ljIn0seyJpZCI6InNwZCIsInQiOiJzbGlkZXIiLCJ4Ijo1NjAsInkiOjEwMCwidyI6MTQ4LCJoIjoyNjIsImxhYmVsIjoiU3BlZWQiLCJtaW4iOjYwLCJtYXgiOjI1NSwic3RlcCI6NSwidmFsdWUiOjIwMH0seyJpZCI6ImJ0bl9zdG9wIiwidCI6ImJ1dHRvbiIsIngiOjc0MCwieSI6MTAwLCJ3IjoxMDcsImgiOjExNSwibGFiZWwiOiJTVE9QIn0seyJpZCI6ImdhdWdlX3NwZCIsInQiOiJnYXVnZSIsIngiOjc0MCwieSI6MjUwLCJ3IjoyMjksImgiOjI1MiwibGFiZWwiOiJTcGVlZCIsIm1pbiI6NjAsIm1heCI6MjU1LCJ1bml0cyI6IiIsImRlY2ltYWxzIjowLCJtb2RlbCI6Im1pbiIsInNvdXJjZSI6InNwZCIsInZhbHVlIjoyMDB9LHsiaWQiOiJidG5fbWwiLCJ0IjoiYnV0dG9uIiwieCI6ODAsInkiOjU4MCwidyI6MjAwLCJoIjoxMjAsImxhYmVsIjoiTGVmdCBtb3RvciIsImljb24iOiLimpnvuI8iLCJzcGluIjotMSwiY29sb3IiOiIjMGU3NDkwIn0seyJpZCI6ImJ0bl9tciIsInQiOiJidXR0b24iLCJ4IjozMDAsInkiOjU4MCwidyI6MjAwLCJoIjoxMjAsImxhYmVsIjoiUmlnaHQgbW90b3IiLCJpY29uIjoi4pqZ77iPIiwic3BpbiI6MSwiY29sb3IiOiIjMGU3NDkwIn0seyJpZCI6InNsaWRlcl9zcnYxIiwidCI6InNsaWRlciIsIngiOjgwLCJ5Ijo4MjAsInciOjk5LCJoIjoyMDMsImxhYmVsIjoiU2Vydm8gMSIsIm1pbiI6MCwibWF4IjoxODAsInN0ZXAiOjEsInZhbHVlIjo5MH0seyJpZCI6ImdhdWdlX3NydjEiLCJ0IjoiZ2F1Z2UiLCJ4IjoyMDAsInkiOjgyMCwidyI6MTY0LCJoIjoxODUsImxhYmVsIjoiU2Vydm8gMSIsIm1pbiI6MCwibWF4IjoxODAsInVuaXRzIjoiwrAiLCJkZWNpbWFscyI6MCwibW9kZWwiOiJtaW4iLCJzb3VyY2UiOiJzbGlkZXJfc3J2MSIsInZhbHVlIjo5MH0seyJpZCI6InNsaWRlcl9zcnYyIiwidCI6InNsaWRlciIsIngiOjQwMCwieSI6ODIwLCJ3Ijo5OSwiaCI6MjAxLCJsYWJlbCI6IlNlcnZvIDIiLCJtaW4iOjAsIm1heCI6MTgwLCJzdGVwIjoxLCJ2YWx1ZSI6OTB9LHsiaWQiOiJnYXVnZV9zcnYyIiwidCI6ImdhdWdlIiwieCI6NTIwLCJ5Ijo4MjAsInciOjE3MywiaCI6MTgxLCJsYWJlbCI6IlNlcnZvIDIiLCJtaW4iOjAsIm1heCI6MTgwLCJ1bml0cyI6IsKwIiwiZGVjaW1hbHMiOjAsIm1vZGVsIjoibWluIiwic291cmNlIjoic2xpZGVyX3NydjIiLCJ2YWx1ZSI6OTB9LHsiaWQiOiJ0b2dnbGVfbGVkX2wiLCJ0IjoidG9nZ2xlIiwieCI6NzYwLCJ5Ijo4MjAsInciOjk3LCJoIjoxMjEsImxhYmVsIjoiTEVEIEwifSx7ImlkIjoidG9nZ2xlX2xlZF9yIiwidCI6InRvZ2dsZSIsIngiOjg3NywieSI6ODIwLCJ3Ijo5NywiaCI6MTIxLCJsYWJlbCI6IkxFRCBSIn0seyJpZCI6ImJ0bl9idXp6IiwidCI6ImJ1dHRvbiIsIngiOjc2MCwieSI6OTY1LCJ3IjoxMDgsImgiOjEyMSwibGFiZWwiOiJCdXp6In0seyJpZCI6ImdhdWdlX2Rpc3QiLCJ0IjoiZ2F1Z2UiLCJ4IjoxMDYwLCJ5IjoxMDAsInciOjI2NCwiaCI6MTg3LCJsYWJlbCI6IkRpc3RhbmNlIiwibWluIjowLCJtYXgiOjIwMCwidW5pdHMiOiJjbSIsImRlY2ltYWxzIjowLCJtb2RlbCI6ImNsYXNzaWMifSx7ImlkIjoiYWxlcnQiLCJ0Ijoibm90aWZpY2F0aW9uIiwieCI6MTM1MCwieSI6MTAwLCJ3Ijo5MCwiaCI6MTg2LCJsYWJlbCI6IkFsZXJ0In0seyJpZCI6ImRpc3RfcmVhZCIsInQiOiJzZWxlY3QiLCJ4IjoxMDYwLCJ5IjozMjAsInciOjE5NCwiaCI6NjIsImxhYmVsIjoiRGlzdGFuY2UgcmVhZCIsIm9wdGlvbnMiOiJBdXRvLFJlYWQgbm93In0seyJpZCI6ImdyYXBoX2Rpc3QiLCJ0IjoiZ3JhcGgiLCJ4IjoxMDYwLCJ5Ijo0MDAsInciOjQ4MSwiaCI6Mjk4LCJsYWJlbCI6IkRpc3RhbmNlIGNtIiwibW9kZWwiOiJncmlkIiwid2luZG93U2VjIjozMCwic2VyaWVzIjoxfSx7ImlkIjoibG5fbCIsInQiOiJsZWQiLCJ4IjoxMDYwLCJ5Ijo4MTAsInciOjc2LCJoIjoxMDUsImxhYmVsIjoiTGluZSBMIiwibW9kZWwiOiJkb3QiLCJjb2xvck9uIjoiIzRhZGU4MCJ9LHsiaWQiOiJsbl9yIiwidCI6ImxlZCIsIngiOjExNTYsInkiOjgxMCwidyI6NzgsImgiOjEwNSwibGFiZWwiOiJMaW5lIFIiLCJtb2RlbCI6ImRvdCIsImNvbG9yT24iOiIjNGFkZTgwIn0seyJpZCI6Im1vZGUiLCJ0Ijoic2VsZWN0IiwieCI6MTI1NCwieSI6ODIwLCJ3IjoxNzksImgiOjkyLCJsYWJlbCI6Ik1vZGUiLCJvcHRpb25zIjoiTWFudWFsLExpbmUsQXZvaWQifSx7ImlkIjoic2NyZWVuX21vZGUiLCJ0Ijoic2VsZWN0IiwieCI6ODAsInkiOjExODAsInciOjIwMCwiaCI6OTIsImxhYmVsIjoiU2NyZWVuIiwib3B0aW9ucyI6IlN0YXR1cyxGYWNlLEF1dG8ifSx7ImlkIjoib2xlZF90ZXh0IiwidCI6ImVkaXRmaWVsZCIsIngiOjMyMCwieSI6MTE4MCwidyI6MzIwLCJoIjo5MiwibGFiZWwiOiJNZXNzYWdlIn0seyJpZCI6ImxibF9vbGVkIiwidCI6ImxhYmVsIiwieCI6NjgwLCJ5IjoxMTgwLCJ3IjoyNDAsImgiOjkyLCJsYWJlbCI6Ik9uIHNjcmVlbiJ9LHsiaWQiOiJsYmxfdmVyIiwidCI6ImxhYmVsIiwieCI6MTA2MCwieSI6MTAyMCwidyI6MTA5LCJoIjo3OSwibGFiZWwiOiJGaXJtd2FyZSJ9LHsiaWQiOiJsYmxfaGVhcnRiZWF0IiwidCI6ImxhYmVsIiwieCI6MTE5MCwieSI6MTAyMCwidyI6MjM3LCJoIjo3NiwibGFiZWwiOiJVcHRpbWUifSx7ImlkIjoidXBkIiwidCI6InNlbGVjdCIsIngiOjEwNjAsInkiOjExMjAsInciOjE4MiwiaCI6OTQsImxhYmVsIjoiVGVsZW1ldHJ5Iiwib3B0aW9ucyI6IkFsbCxCYXNpYyxPZmYifV0sImNhbnZhcyI6eyJ3IjoxNjIxLCJoIjoxMzUyfX0="
+const CFG = "eyJ0aXRsZSI6Ik1hcXVlZW4gUmVtb3RlIiwid2lkZ2V0cyI6W3siaWQiOiJncnBfZHJpdmUiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IkRSSVZFIiwiY29sb3IiOiIjMDBkNGZmIiwieCI6NTYsInkiOjQyLCJ3Ijo5MzcsImgiOjY4MiwiY2hpbGRyZW4iOiJkcGFkX21vdmUsc3BkLGJ0bl9zdG9wLGdhdWdlX3NwZCxidG5fbWwsYnRuX21yIn0seyJpZCI6ImdycF9oZWFkIiwidCI6Imdyb3VwIiwibGFiZWwiOiJIRUFEIiwiY29sb3IiOiIjZmY5NTAwIiwieCI6NTYsInkiOjc2MiwidyI6NjYxLCJoIjoyODUsImNoaWxkcmVuIjoic2xpZGVyX3NydjEsZ2F1Z2Vfc3J2MSxzbGlkZXJfc3J2MixnYXVnZV9zcnYyIn0seyJpZCI6ImdycF9saWdodCIsInQiOiJncm91cCIsImxhYmVsIjoiTElHSFRTICYgU09VTkQiLCJjb2xvciI6IiNjMDg0ZmMiLCJ4Ijo3MzYsInkiOjc2MiwidyI6MjYyLCJoIjozNDgsImNoaWxkcmVuIjoidG9nZ2xlX2xlZF9sLHRvZ2dsZV9sZWRfcixidG5fYnV6eiJ9LHsiaWQiOiJncnBfZGlzdCIsInQiOiJncm91cCIsImxhYmVsIjoiRElTVEFOQ0UiLCJjb2xvciI6IiNmZmIwMjAiLCJ4IjoxMDM2LCJ5Ijo0MiwidyI6NTI5LCJoIjo2ODAsImNoaWxkcmVuIjoiZ2F1Z2VfZGlzdCxhbGVydCxkaXN0X3JlYWQsZ3JhcGhfZGlzdCJ9LHsiaWQiOiJncnBfYXV0byIsInQiOiJncm91cCIsImxhYmVsIjoiQVVUT05PTVkiLCJjb2xvciI6IiMwMGU2NzYiLCJ4IjoxMDM2LCJ5Ijo3NTIsInciOjQyMSwiaCI6MTg3LCJjaGlsZHJlbiI6ImxuX2wsbG5fcixtb2RlIn0seyJpZCI6ImdycF9zY3IiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IlNDUkVFTiIsImNvbG9yIjoiIzM4YmRmOCIsIngiOjU2LCJ5IjoxMTIyLCJ3Ijo4ODgsImgiOjI5NCwiY2hpbGRyZW4iOiJzY3JlZW5fbW9kZSxvbGVkX3RleHQsbGJsX29sZWQsZmFjZV9zdHlsZSxoZWFkX21vZGUifSx7ImlkIjoiZ3JwX3N5cyIsInQiOiJncm91cCIsImxhYmVsIjoiU1lTVEVNIiwiY29sb3IiOiIjODg5MmIwIiwieCI6MTAzNiwieSI6OTYyLCJ3Ijo0MTUsImgiOjI3NiwiY2hpbGRyZW4iOiJsYmxfdmVyLGxibF9oZWFydGJlYXQsdXBkIn0seyJpZCI6InNlcF9jb2xzIiwidCI6InNlcGFyYXRvciIsIngiOjEwMTIsInkiOjEwMCwidyI6OCwiaCI6NjgwfSx7ImlkIjoic2VwX2xlZnQiLCJ0Ijoic2VwYXJhdG9yIiwieCI6ODAsInkiOjc0NSwidyI6ODkwLCJoIjo4fSx7ImlkIjoic2VwX3J0MSIsInQiOiJzZXBhcmF0b3IiLCJ4IjoxMDYwLCJ5Ijo3MzAsInciOjQ5MCwiaCI6OH0seyJpZCI6InNlcF9ydDIiLCJ0Ijoic2VwYXJhdG9yIiwieCI6MTA2MCwieSI6OTQ2LCJ3Ijo0OTAsImgiOjh9LHsiaWQiOiJkcGFkX21vdmUiLCJ0IjoiZHBhZCIsIngiOjgwLCJ5IjoxMDAsInciOjQ0OSwiaCI6NDU2LCJsYWJlbCI6IkRyaXZlIiwibW9kZWwiOiJjbGFzc2ljIn0seyJpZCI6InNwZCIsInQiOiJzbGlkZXIiLCJ4Ijo1NjAsInkiOjEwMCwidyI6MTQ4LCJoIjoyNjIsImxhYmVsIjoiU3BlZWQiLCJtaW4iOjYwLCJtYXgiOjI1NSwic3RlcCI6NSwidmFsdWUiOjIwMH0seyJpZCI6ImJ0bl9zdG9wIiwidCI6ImJ1dHRvbiIsIngiOjc0MCwieSI6MTAwLCJ3IjoxMDcsImgiOjExNSwibGFiZWwiOiJTVE9QIn0seyJpZCI6ImdhdWdlX3NwZCIsInQiOiJnYXVnZSIsIngiOjc0MCwieSI6MjUwLCJ3IjoyMjksImgiOjI1MiwibGFiZWwiOiJTcGVlZCIsIm1pbiI6NjAsIm1heCI6MjU1LCJ1bml0cyI6IiIsImRlY2ltYWxzIjowLCJtb2RlbCI6Im1pbiIsInNvdXJjZSI6InNwZCIsInZhbHVlIjoyMDB9LHsiaWQiOiJidG5fbWwiLCJ0IjoiYnV0dG9uIiwieCI6ODAsInkiOjU4MCwidyI6MjAwLCJoIjoxMjAsImxhYmVsIjoiTGVmdCBtb3RvciIsImljb24iOiLimpnvuI8iLCJzcGluIjotMSwiY29sb3IiOiIjMGU3NDkwIn0seyJpZCI6ImJ0bl9tciIsInQiOiJidXR0b24iLCJ4IjozMDAsInkiOjU4MCwidyI6MjAwLCJoIjoxMjAsImxhYmVsIjoiUmlnaHQgbW90b3IiLCJpY29uIjoi4pqZ77iPIiwic3BpbiI6MSwiY29sb3IiOiIjMGU3NDkwIn0seyJpZCI6InNsaWRlcl9zcnYxIiwidCI6InNsaWRlciIsIngiOjgwLCJ5Ijo4MjAsInciOjk5LCJoIjoyMDMsImxhYmVsIjoiU2Vydm8gMSIsIm1pbiI6MCwibWF4IjoxODAsInN0ZXAiOjEsInZhbHVlIjo5MH0seyJpZCI6ImdhdWdlX3NydjEiLCJ0IjoiZ2F1Z2UiLCJ4IjoyMDAsInkiOjgyMCwidyI6MTY0LCJoIjoxODUsImxhYmVsIjoiU2Vydm8gMSIsIm1pbiI6MCwibWF4IjoxODAsInVuaXRzIjoiwrAiLCJkZWNpbWFscyI6MCwibW9kZWwiOiJtaW4iLCJzb3VyY2UiOiJzbGlkZXJfc3J2MSIsInZhbHVlIjo5MH0seyJpZCI6InNsaWRlcl9zcnYyIiwidCI6InNsaWRlciIsIngiOjQwMCwieSI6ODIwLCJ3Ijo5OSwiaCI6MjAxLCJsYWJlbCI6IlNlcnZvIDIiLCJtaW4iOjAsIm1heCI6MTgwLCJzdGVwIjoxLCJ2YWx1ZSI6OTB9LHsiaWQiOiJnYXVnZV9zcnYyIiwidCI6ImdhdWdlIiwieCI6NTIwLCJ5Ijo4MjAsInciOjE3MywiaCI6MTgxLCJsYWJlbCI6IlNlcnZvIDIiLCJtaW4iOjAsIm1heCI6MTgwLCJ1bml0cyI6IsKwIiwiZGVjaW1hbHMiOjAsIm1vZGVsIjoibWluIiwic291cmNlIjoic2xpZGVyX3NydjIiLCJ2YWx1ZSI6OTB9LHsiaWQiOiJ0b2dnbGVfbGVkX2wiLCJ0IjoidG9nZ2xlIiwieCI6NzYwLCJ5Ijo4MjAsInciOjk3LCJoIjoxMjEsImxhYmVsIjoiTEVEIEwifSx7ImlkIjoidG9nZ2xlX2xlZF9yIiwidCI6InRvZ2dsZSIsIngiOjg3NywieSI6ODIwLCJ3Ijo5NywiaCI6MTIxLCJsYWJlbCI6IkxFRCBSIn0seyJpZCI6ImJ0bl9idXp6IiwidCI6ImJ1dHRvbiIsIngiOjc2MCwieSI6OTY1LCJ3IjoxMDgsImgiOjEyMSwibGFiZWwiOiJCdXp6In0seyJpZCI6ImdhdWdlX2Rpc3QiLCJ0IjoiZ2F1Z2UiLCJ4IjoxMDYwLCJ5IjoxMDAsInciOjI2NCwiaCI6MTg3LCJsYWJlbCI6IkRpc3RhbmNlIiwibWluIjowLCJtYXgiOjIwMCwidW5pdHMiOiJjbSIsImRlY2ltYWxzIjowLCJtb2RlbCI6ImNsYXNzaWMifSx7ImlkIjoiYWxlcnQiLCJ0Ijoibm90aWZpY2F0aW9uIiwieCI6MTM1MCwieSI6MTAwLCJ3Ijo5MCwiaCI6MTg2LCJsYWJlbCI6IkFsZXJ0In0seyJpZCI6ImRpc3RfcmVhZCIsInQiOiJzZWxlY3QiLCJ4IjoxMDYwLCJ5IjozMjAsInciOjE5NCwiaCI6NjIsImxhYmVsIjoiRGlzdGFuY2UgcmVhZCIsIm9wdGlvbnMiOiJBdXRvLFJlYWQgbm93In0seyJpZCI6ImdyYXBoX2Rpc3QiLCJ0IjoiZ3JhcGgiLCJ4IjoxMDYwLCJ5Ijo0MDAsInciOjQ4MSwiaCI6Mjk4LCJsYWJlbCI6IkRpc3RhbmNlIGNtIiwibW9kZWwiOiJncmlkIiwid2luZG93U2VjIjozMCwic2VyaWVzIjoxfSx7ImlkIjoibG5fbCIsInQiOiJsZWQiLCJ4IjoxMDYwLCJ5Ijo4MTAsInciOjc2LCJoIjoxMDUsImxhYmVsIjoiTGluZSBMIiwibW9kZWwiOiJkb3QiLCJjb2xvck9uIjoiIzRhZGU4MCJ9LHsiaWQiOiJsbl9yIiwidCI6ImxlZCIsIngiOjExNTYsInkiOjgxMCwidyI6NzgsImgiOjEwNSwibGFiZWwiOiJMaW5lIFIiLCJtb2RlbCI6ImRvdCIsImNvbG9yT24iOiIjNGFkZTgwIn0seyJpZCI6Im1vZGUiLCJ0Ijoic2VsZWN0IiwieCI6MTI1NCwieSI6ODIwLCJ3IjoxNzksImgiOjkyLCJsYWJlbCI6Ik1vZGUiLCJvcHRpb25zIjoiTWFudWFsLExpbmUsQXZvaWQifSx7ImlkIjoic2NyZWVuX21vZGUiLCJ0Ijoic2VsZWN0IiwieCI6ODAsInkiOjExODAsInciOjIwMCwiaCI6OTIsImxhYmVsIjoiU2NyZWVuIiwib3B0aW9ucyI6IlN0YXR1cyxGYWNlLEF1dG8sUmFkYXIifSx7ImlkIjoib2xlZF90ZXh0IiwidCI6ImVkaXRmaWVsZCIsIngiOjMyMCwieSI6MTE4MCwidyI6MzIwLCJoIjo5MiwibGFiZWwiOiJNZXNzYWdlIn0seyJpZCI6ImxibF9vbGVkIiwidCI6ImxhYmVsIiwieCI6NjgwLCJ5IjoxMTgwLCJ3IjoyNDAsImgiOjkyLCJsYWJlbCI6Ik9uIHNjcmVlbiJ9LHsiaWQiOiJmYWNlX3N0eWxlIiwidCI6InNlbGVjdCIsIngiOjgwLCJ5IjoxMzAwLCJ3IjoyMDAsImgiOjkyLCJsYWJlbCI6IkZhY2Ugc3R5bGUiLCJvcHRpb25zIjoiUm91bmQsQ2lyY2xlLFJvYm90LEJpZyxWaXNvciJ9LHsiaWQiOiJoZWFkX21vZGUiLCJ0Ijoic2VsZWN0IiwieCI6MzIwLCJ5IjoxMzAwLCJ3IjoyMDAsImgiOjkyLCJsYWJlbCI6IlJhZGFyIGhlYWQiLCJvcHRpb25zIjoiU3dlZXAsQWltIn0seyJpZCI6ImxibF92ZXIiLCJ0IjoibGFiZWwiLCJ4IjoxMDYwLCJ5IjoxMDIwLCJ3IjoxMDksImgiOjc5LCJsYWJlbCI6IkZpcm13YXJlIn0seyJpZCI6ImxibF9oZWFydGJlYXQiLCJ0IjoibGFiZWwiLCJ4IjoxMTkwLCJ5IjoxMDIwLCJ3IjoyMzcsImgiOjc2LCJsYWJlbCI6IlVwdGltZSJ9LHsiaWQiOiJ1cGQiLCJ0Ijoic2VsZWN0IiwieCI6MTA2MCwieSI6MTEyMCwidyI6MTgyLCJoIjo5NCwibGFiZWwiOiJUZWxlbWV0cnkiLCJvcHRpb25zIjoiQWxsLEJhc2ljLE9mZiJ9XSwiY2FudmFzIjp7InciOjE2MjEsImgiOjE0NzJ9fQ=="
 // v52: computed from CFG itself at boot.
 let CFG_REV = cfgRevisionFromCfg(CFG)
 
@@ -718,6 +734,11 @@ const LINE_INTERVAL_MS = 100
 const AVOID_STOP_CM = 20        // back away closer than this
 const ALERT_CM = 25             // notify the app below this
 const ALERT_CLEAR_CM = 40       // ...and only re-arm once well clear again
+// Declared up here with the other distance limits rather than beside the
+// polling loop that also uses it: the radar reads it too, and the radar is
+// drawn from the screen section far above that loop. Static TypeScript rejects
+// use-before-declaration, so the constant has to lead both readers.
+const DIST_MAX_CM = 200         // matches the gauge's max in CFG
 let alertActive = false
 // The version label is pushed once per session, from the main loop.
 // Deliberately NOT sent from the GETCFG handler: writing to the UART
@@ -1033,7 +1054,8 @@ function oledSelfTest() {
     OLED.clear()
     OLED.writeStringNewLine("Workshop-DIY.org")
     OLED.writeStringNewLine("Maqueen      " + FIRMWARE_VERSION)
-    OLED.writeStringNewLine("")
+    // The pairing name, at the first moment anyone would want it.
+    OLED.writeStringNewLine("micro:bit " + control.deviceName())
     OLED.writeStringNewLine("Screen 0x3C   ok")
     OLED.writeStringNewLine("Driver 0x10   " + driver)
     OLED.writeStringNewLine("Sonar    " + sonar)
@@ -1059,11 +1081,18 @@ function oledLines(): string[] {
         out.push(oledPad("Maqueen", 13) + FIRMWARE_VERSION)
     }
     // Minutes, not seconds — see rule 3 above.
-    out.push("BLE   " + (btConnected
-        ? "up " + Math.idiv(heartbeat, 60) + "m"
-        : "offline"))
-    out.push("Mode  " + (driveMode == MODE_LINE ? "Line"
-        : driveMode == MODE_AVOID ? "Avoid" : "Manual"))
+    out.push(btConnected
+        ? "BLE   up " + Math.idiv(heartbeat, 60) + "m"
+        : "Connect to:")
+    // Disconnected, the useful thing is WHICH micro:bit this is. The browser's
+    // chooser lists them as "BBC micro:bit [xxxxx]" and they all look alike,
+    // so picking your own out of a classroom is otherwise a guess -- and the
+    // drive mode this row usually carries is meaningless while disconnected,
+    // since the link dropping resets it to Manual anyway.
+    out.push(btConnected
+        ? "Mode  " + (driveMode == MODE_LINE ? "Line"
+            : driveMode == MODE_AVOID ? "Avoid" : "Manual")
+        : "micro:bit " + control.deviceName())
     out.push("Speed " + oledNum(driveSpeed, 3))
     out.push("Motor L" + oledPad(oledSigned(lastDriveL), 5) + "R" + oledSigned(lastDriveR))
     // Quantised to 5 cm so sensor jitter alone cannot drive a repaint.
@@ -1139,6 +1168,158 @@ function fbFlush() {
     }
 }
 
+// ── RADAR ───────────────────────────────────────────────────────────
+// The rover's sonar map, and it needs the same thing the rover has: a sensor
+// that can look somewhere other than straight ahead. A Maqueen's ultrasonic
+// is bolted to the chassis, so THIS SCREEN ONLY MEANS ANYTHING IF THE SENSOR
+// IS MOUNTED ON SERVO 1. Left on the chassis, every reading lands at the same
+// heading and the scope draws a single spoke -- which is exactly what it
+// should draw, because that is all the robot can see.
+//
+// Each column of the picture is one heading and each mark is how close the
+// nearest thing at that heading is, so the glass becomes a drawing of the room
+// made by the robot rather than a number that changes.
+const SCOPE_CX = 63
+const SCOPE_CY = 63              // origin on the bottom edge
+const SCOPE_R = 62
+// The rover stretches its scope sideways by two: a half-disc that fits 32
+// rows can only have a 31-pixel radius, which would leave two thirds of the
+// width black. At 64 rows the radius reaches 62 and the semicircle is true,
+// so there is nothing to stretch and no distortion to explain.
+const BLIP_MAX = 48
+const BLIP_LIFE_MS = 5000
+let blipAngle: number[] = []
+let blipCm: number[] = []
+let blipAt: number[] = []
+let radarFresh = true            // true = redraw the whole scope next time
+let scopeBeamAt = -1             // beam angle currently on the glass
+let scopeExpireAt = 0            // next sweep for blips that have aged out
+
+// ── SWEEP HEAD (Servo 1) ────────────────────────────────────────────
+// Driven from the loop by timestamps, never by pauses, so the radio and the
+// drive watchdog keep running through a sweep. The limits stop short of the
+// ends: a head that slams into the chassis at 0 or 180 stalls the servo,
+// which draws current and buzzes rather than moving.
+const HEAD_MIN = 30
+const HEAD_MAX = 150
+const HEAD_STEP = 6
+const HEAD_STEP_MS = 140         // a step, plus room for the ping it triggers
+let headAngle = 90
+let headDir = 1
+let nextHeadAt = 0
+// Sweep pans the head on its own; Aim hands it to the Servo 1 slider and
+// plots wherever it is pointed. Sweep by default, because a scope whose beam
+// never moves is a distance gauge drawn the long way round.
+let radarSweep = true
+
+function fbPixel(x: number, y: number, on: boolean) {
+    if (x < 0 || x >= FB_W || y < 0 || y >= FB_PAGES * 8) return
+    const i = (y >> 3) * FB_W + x
+    const bit = 1 << (y & 7)
+    fb[i] = on ? (fb[i] | bit) : (fb[i] & (~bit & 0xFF))
+}
+
+// Deliberately NOT linear, and the same curve the app's radar widget uses so
+// the two displays agree about what "close" looks like: the first 10cm gets a
+// quarter of the radius. Close things are what matter, and on a linear scale
+// they all pile up in the middle.
+function scopeRadius(cm: number): number {
+    let r = 0
+    if (cm <= 0) r = 0
+    else if (cm < 10) r = Math.idiv(cm * 40, 10)
+    else if (cm < 30) r = 40 + Math.idiv((cm - 10) * 40, 20)
+    else if (cm < 100) r = 80 + Math.idiv((cm - 30) * 80, 70)
+    else r = 160
+    // that scale is 0..160; this glass is 0..SCOPE_R
+    return Math.idiv(r * SCOPE_R, 160)
+}
+
+function scopePlot(deg: number, r: number, on: boolean) {
+    const rad = deg * Math.PI / 180
+    fbPixel(SCOPE_CX + Math.round(r * Math.cos(rad)),
+            SCOPE_CY - Math.round(r * Math.sin(rad)), on)
+}
+
+// Three range rings: 10, 30 and 100cm. The rover draws only two -- at 32 rows
+// its 10cm ring lands at a 7-pixel radius and merely thickens the origin. Here
+// it reaches 15 pixels and is a ring worth having, which is the same reason
+// the scope needed no stretching.
+//
+// Drawn SOLID, one degree at a time. A dotted arc was the rover's first
+// attempt and at this size it read as confetti, indistinguishable from the
+// blips it is supposed to be a backdrop for. The inner rings are shorter arcs,
+// so a coarser step is plenty there.
+function scopeRings() {
+    for (let a = 0; a <= 180; a++) scopePlot(a, scopeRadius(100), true)
+    for (let a = 0; a <= 180; a += 2) scopePlot(a, scopeRadius(30), true)
+    for (let a = 0; a <= 180; a += 4) scopePlot(a, scopeRadius(10), true)
+    // The floor the rings stand on.
+    fbRect(0, SCOPE_CY, FB_W, 1, true)
+}
+
+function scopeDraw(now: number) {
+    fb.fill(0)
+    scopeRings()
+    // Live beam: solid, so it is obviously the thing that is moving.
+    for (let r = 0; r <= SCOPE_R; r++) scopePlot(headAngle, r, true)
+    // Everything the sweep has found lately.
+    for (let i = 0; i < blipAngle.length; i++) {
+        if (now - blipAt[i] > BLIP_LIFE_MS) continue
+        const r = scopeRadius(blipCm[i])
+        scopePlot(blipAngle[i], r, true)
+        // A single pixel is 0.15mm. Two, and it is a mark.
+        scopePlot(blipAngle[i], r - 1, true)
+    }
+    fbFlush()
+}
+
+// Blips persist and fade over five seconds, so a sweep builds a picture
+// instead of showing one reading. Parallel arrays rather than objects: this
+// runs in the MakeCode interpreter and a fixed ring of numbers costs nothing.
+function radarPaint(angle: number, cm: number) {
+    // Nothing bounced back is not a detection. Plotting it would draw a wall
+    // at maximum range all the way round an empty room.
+    if (cm > 0 && cm < DIST_MAX_CM) {
+        blipAngle.push(angle)
+        blipCm.push(cm)
+        blipAt.push(input.runningTime())
+        while (blipAngle.length > BLIP_MAX) {
+            blipAngle.shift(); blipCm.shift(); blipAt.shift()
+        }
+    }
+    radarFresh = false
+    scopeDraw(input.runningTime())
+}
+
+// One sweep step: move, ping, plot. Called from the loop only while the radar
+// screen is up and the wheels are still -- a sweep while driving would smear
+// the picture across headings the robot no longer occupies, and the ping
+// itself can stall for a quarter second when nothing echoes back.
+function radarTick(now: number) {
+    if (now < nextHeadAt) return
+    nextHeadAt = now + HEAD_STEP_MS
+    if (radarSweep) {
+        headAngle += headDir * HEAD_STEP
+        if (headAngle >= HEAD_MAX) { headAngle = HEAD_MAX; headDir = -1 }
+        else if (headAngle <= HEAD_MIN) { headAngle = HEAD_MIN; headDir = 1 }
+        maqueen.servoRun(maqueen.Servos.S1, headAngle)
+    } else {
+        // Aim: the slider already moved the horn, so this only has to agree
+        // with it about where the horn is pointing. Writing the servo again
+        // here would fight the slider for the same I2C bus and change nothing.
+        headAngle = Math.constrain(uiServo1, 0, 180)
+    }
+    // Let the horn actually arrive before asking what is in front of it.
+    // Timestamped rather than paused, like everything else in this loop.
+    const cm = maqueen.Ultrasonic()
+    if (cm > 0 && cm < 500) {
+        lastDistShown = Math.min(cm, DIST_MAX_CM)
+        radarPaint(headAngle, cm)
+    } else {
+        radarPaint(headAngle, -1)      // still redraw: the beam has moved
+    }
+}
+
 // ── FACE ────────────────────────────────────────────────────────────
 // Scaled up from the rover's 128x32 geometry. Doubling the height alone is
 // not enough: at 64 rows the eyes have to grow sideways too, or they read as
@@ -1180,6 +1361,53 @@ let faceDriveNextAt = 0
 // where you are about to go, rather than a twitch on every button.
 let faceWasDriving = false
 
+// ── EYE STYLES ──────────────────────────────────────────────────────
+// Five characters, one mood system. Every style still blinks, worries, is
+// startled, falls asleep and winks -- what changes is the shape those
+// expressions are drawn with, so a style is a look rather than a behaviour and
+// none of the precedence logic below has to know which is in force.
+//
+// The whole eye stays EYE_W x EYE_H in every style so the pupil's safe travel
+// is one calculation rather than five. Only three things vary: how much the
+// corners are cut, how tall the eye is, and how big the pupil sits inside it.
+const STYLE_ROUND = 0            // rounded rectangle -- the rover's own
+const STYLE_CIRCLE = 1           // corners cut twice as deep, reads as round
+const STYLE_ROBOT = 2            // hard corners, a wide letterbox pupil
+const STYLE_BIG = 3              // round with a highlight, the cartoon one
+const STYLE_VISOR = 4            // a short wide band, more helmet than eye
+const FACE_STYLES = 5
+let faceStyle = STYLE_ROUND
+
+// Corner inset: how far the two crossed rectangles are pulled in from the
+// edges. 0 leaves a hard rectangle, and bigger bites more off each corner.
+function styleInset(): number {
+    if (faceStyle == STYLE_ROBOT) return 0
+    if (faceStyle == STYLE_CIRCLE) return 8
+    if (faceStyle == STYLE_VISOR) return 4
+    return 3
+}
+
+// Visor is a band rather than a full eye, so it is the one style whose height
+// differs -- and its pupil shrinks to match, or it would punch straight
+// through the top and bottom of a shorter eye.
+function styleEyeH(): number {
+    return faceStyle == STYLE_VISOR ? 24 : EYE_H
+}
+
+function stylePupW(): number {
+    if (faceStyle == STYLE_VISOR) return 12
+    if (faceStyle == STYLE_BIG) return 24
+    if (faceStyle == STYLE_ROBOT) return 24
+    return PUP
+}
+
+function stylePupH(): number {
+    if (faceStyle == STYLE_VISOR) return 12
+    if (faceStyle == STYLE_BIG) return 24
+    if (faceStyle == STYLE_ROBOT) return 14      // letterbox, not square
+    return PUP
+}
+
 // How far the pupils travel when the robot looks at something. NOT free to
 // pick: the pupil is a hole punched in the eye, and past +/-9 horizontally
 // it reaches the 3px rounded border and opens the eye into a C. Rendering
@@ -1198,7 +1426,8 @@ const GAZE_Y = 6
 const SCREEN_STATUS = 0
 const SCREEN_FACE = 1
 const SCREEN_AUTO = 2            // status until connected, then the face
-const SCREEN_MODES = 3
+const SCREEN_RADAR = 3           // needs the sonar on Servo 1 -- see RADAR
+const SCREEN_MODES = 4
 let screenMode = SCREEN_STATUS
 
 let faceNextBlinkAt = 0
@@ -1280,31 +1509,58 @@ function drawEye(x: number, mode: number, dx: number, dy: number, cutRight: bool
         }
         return
     }
+    const eh = styleEyeH()
+    // Centre a short eye in the space a tall one would use, so switching style
+    // does not shift the face up the glass.
+    const y = EYE_Y + ((EYE_H - eh) >> 1)
     if (mode == FACE_SHUT) {
         // A bar, not a short rectangle: anything taller reads as a squint.
-        fbRect(x, EYE_Y + (EYE_H >> 1) - 3, EYE_W, 6, true)
+        fbRect(x, y + (eh >> 1) - 3, EYE_W, 6, true)
         return
     }
-    const y = EYE_Y
+    const ins = styleInset()
     // Rounded with two crossed rectangles. Cheaper than a circle, and the
-    // corners are the only part anyone notices at this size.
-    fbRect(x + 3, y, EYE_W - 6, EYE_H, true)
-    fbRect(x, y + 3, EYE_W, EYE_H - 6, true)
+    // corners are the only part anyone notices at this size. An inset of 0
+    // collapses both to the same rectangle, which is the robot style.
+    fbRect(x + ins, y, EYE_W - ins * 2, eh, true)
+    fbRect(x, y + ins, EYE_W, eh - ins * 2, true)
     // The pupil is a HOLE punched in the white of the eye. It shrinks when
     // the robot is lifted — a small pupil in a wide eye is what alarm looks
     // like, and it costs nothing but a smaller rectangle.
-    // Small pupil, wide eye: the shape of both being lifted and being startled.
-    const pw = (mode == FACE_ALARM || mode == FACE_STARTLE) ? PUP_SMALL : PUP
-    fbRect(x + ((EYE_W - pw) >> 1) + dx, y + ((EYE_H - pw) >> 1) + dy,
-           pw, pw, false)
+    const startled = mode == FACE_ALARM || mode == FACE_STARTLE
+    const pw = startled ? PUP_SMALL : stylePupW()
+    const ph = startled ? PUP_SMALL : stylePupH()
+    const ox = (EYE_W - pw) >> 1
+    const oy = (eh - ph) >> 1
+    // CLAMP THE GAZE TO WHAT THIS STYLE CAN HOLD. The pupil is a hole, so one
+    // that reaches the border opens the eye into a C -- and how much room
+    // there is depends on the style's own pupil size, eye height and corner
+    // inset. A single GAZE constant cannot be right for all five: a circular
+    // eye has barely half the travel a hard rectangle does. Clamping against
+    // the geometry here, rather than tuning five constants by eye, also means
+    // a sixth style added later cannot reintroduce the bug.
+    const rim = ins > 0 ? ins : 2
+    const cdx = Math.constrain(dx, rim + 1 - ox, (EYE_W - rim - 1) - (ox + pw))
+    const cdy = Math.constrain(dy, rim + 1 - oy, (eh - rim - 1) - (oy + ph))
+    fbRect(x + ox + cdx, y + oy + cdy, pw, ph, false)
+    // One lit square inside the hole, high and outward: the catchlight that
+    // separates a cartoon eye from a hole cut in a mask. Only the BIG style
+    // has a pupil with room for it.
+    if (faceStyle == STYLE_BIG && !startled) {
+        fbRect(x + ox + cdx + (cutRight ? pw - 9 : 4),
+               y + oy + cdy + 4, 5, 5, true)
+    }
     if (mode == FACE_WORRIED) {
         // Brows, as a wedge cleared off the top: deepest at the OUTER edge so
         // the inner ends ride UP. Cut them the other way and the same shape
         // reads as angry instead of worried. Just shortening the eye, which is
         // what this did first, only ever read as a squint.
+        // Scaled to the style's own eye height, so a short visor gets a
+        // shallow brow instead of having most of it cleared away.
+        const brow = Math.idiv(BROW * eh, EYE_H)
         for (let c = 0; c < EYE_W; c++) {
             const t = cutRight ? c : (EYE_W - 1 - c)
-            const d = Math.idiv(t * BROW, EYE_W - 1)
+            const d = Math.idiv(t * brow, EYE_W - 1)
             if (d > 0) fbRect(x + c, y, 1, d, false)
         }
     }
@@ -1400,7 +1656,7 @@ function faceRender(now: number) {
     // the signature — otherwise it looks identical to a blink and the frame
     // is skipped as unchanged.
     const winking = mode == FACE_SHUT && faceWink
-    const sig = "" + mode + "," + dx + "," + dy + (winking ? (faceWinkLeft ? ",wl" : ",wr") : "")
+    const sig = "" + faceStyle + ":" + mode + "," + dx + "," + dy + (winking ? (faceWinkLeft ? ",wl" : ",wr") : "")
     if (sig == faceSig) return
     faceSig = sig
     fb.fill(0)
@@ -1414,6 +1670,7 @@ function faceRender(now: number) {
 // What the app should show as "On screen". The status text is many lines and
 // the face is not text at all, so this reports the one thing worth naming.
 function oledCurrent(): string {
+    if (screenMode == SCREEN_RADAR) return "Radar"
     if (faceWanted()) return "Face"
     if (oledText.length > 0) return oledText.substr(0, OLED_COLS)
     return "Status"
@@ -1424,7 +1681,8 @@ function oledCurrent(): string {
 // never disagree about which is in force.
 function screenReport() {
     const name = screenMode == SCREEN_FACE ? "Face"
-        : screenMode == SCREEN_AUTO ? "Auto" : "Status"
+        : screenMode == SCREEN_AUTO ? "Auto"
+        : screenMode == SCREEN_RADAR ? "Radar" : "Status"
     sendUiValue("screen_mode", name)
     const cur = oledCurrent()
     if (cur != oledLastReported) {
@@ -1448,6 +1706,26 @@ function oledRender() {
     // too — they are what its eyes follow.
     oledLineL = maqueen.readPatrol(maqueen.Patrol.PatrolLeft) == 0 ? 1 : 0
     oledLineR = maqueen.readPatrol(maqueen.Patrol.PatrolRight) == 0 ? 1 : 0
+    if (screenMode == SCREEN_RADAR && oledText.length == 0) {
+        // Text and face must both repaint on the way back out.
+        for (let i = 0; i < OLED_ROWS; i++) oledOnGlass[i] = ""
+        faceSig = ""
+        // Frozen while driving, like the face and for the same reason: a frame
+        // is 1024 bytes on the bus the motors need. Worse here, since a sweep
+        // taken while the robot turns plots readings against headings it has
+        // already left.
+        if (lastDriveL != 0 || lastDriveR != 0) return
+        radarTick(now)
+        // Redraw when a blip has aged out even if the beam has not moved, so
+        // an abandoned picture fades instead of hanging there.
+        if (radarFresh || now >= scopeExpireAt) {
+            scopeExpireAt = now + 1000
+            scopeBeamAt = headAngle
+            scopeDraw(now)
+            radarFresh = false
+        }
+        return
+    }
     if (faceWanted()) {
         // Text must repaint when we come back, or half the old status would
         // survive underneath the next frame.
@@ -1550,14 +1828,45 @@ function handleWidget(id: string, val: string) {
     // Select: Screen — Status / Face / Auto. The same three the button on the
     // robot cycles, so either can drive it and both stay in step.
     if (id == "screen_mode") {
+        const wasRadar = screenMode == SCREEN_RADAR
         if (val == "Face") screenMode = SCREEN_FACE
         else if (val == "Auto") screenMode = SCREEN_AUTO
+        else if (val == "Radar") screenMode = SCREEN_RADAR
         else screenMode = SCREEN_STATUS
+        // Same handover as button A: a sweep leaves the horn wherever it
+        // happened to stop, and the app's slider would silently disagree.
+        if (wasRadar && screenMode != SCREEN_RADAR) {
+            maqueen.servoRun(maqueen.Servos.S1, uiServo1)
+        }
+        radarFresh = true
         // Force whichever renderer comes next to repaint over the other one.
         faceSig = ""
         for (let i = 0; i < OLED_ROWS; i++) oledOnGlass[i] = ""
         screenReport()
         dbg("screen -> " + val)
+        return
+    }
+
+    // Select: Face style — five looks, one mood system.
+    // Select: Radar head — Sweep pans on its own, Aim follows Servo 1.
+    if (id == "head_mode") {
+        radarSweep = (val == "Sweep")
+        // Leaving Sweep hands the horn back where the slider thinks it is, so
+        // the two never disagree about which way the robot is looking.
+        if (!radarSweep) maqueen.servoRun(maqueen.Servos.S1, uiServo1)
+        radarFresh = true
+        dbg("radar head -> " + val)
+        return
+    }
+
+    if (id == "face_style") {
+        if (val == "Circle") faceStyle = STYLE_CIRCLE
+        else if (val == "Robot") faceStyle = STYLE_ROBOT
+        else if (val == "Big") faceStyle = STYLE_BIG
+        else if (val == "Visor") faceStyle = STYLE_VISOR
+        else faceStyle = STYLE_ROUND
+        faceSig = ""             // the style is in the signature; force a frame
+        dbg("face style -> " + val)
         return
     }
 
@@ -1745,12 +2054,31 @@ oledSplashUntil = input.runningTime() + OLED_SPLASH_MS
 // extension the rover needs to remember its choice across a power cycle.
 input.onButtonPressed(Button.A, function () {
     if (!oledOk) return
+    const was = screenMode
     screenMode = (screenMode + 1) % SCREEN_MODES
+    // Servo 1 is the sweep head while the radar is up. Stepping off that
+    // screen has to hand it back, or it stops wherever the sweep happened to
+    // leave it and the app's slider silently disagrees with the horn.
+    if (was == SCREEN_RADAR) maqueen.servoRun(maqueen.Servos.S1, uiServo1)
+    radarFresh = true
     // Force whichever renderer comes next to repaint over the other one.
     for (let i = 0; i < OLED_ROWS; i++) oledOnGlass[i] = ""
     faceSig = ""
     screenReport()
     dbg("screen mode -> " + screenMode)
+})
+
+// Button B cycles the face style, so the look can be changed with no app
+// attached -- the same reason button A cycles the screen.
+input.onButtonPressed(Button.B, function () {
+    if (!oledOk) return
+    faceStyle = (faceStyle + 1) % FACE_STYLES
+    faceSig = ""
+    sendUiValue("face_style", faceStyle == STYLE_CIRCLE ? "Circle"
+        : faceStyle == STYLE_ROBOT ? "Robot"
+        : faceStyle == STYLE_BIG ? "Big"
+        : faceStyle == STYLE_VISOR ? "Visor" : "Round")
+    dbg("face style -> " + faceStyle)
 })
 
 // The one deliberate request for a face in the whole firmware, so it outranks
@@ -1922,7 +2250,6 @@ function uptimeString(totalSec: number): string {
 const DIST_INTERVAL_MS = 400          // when the sensor is returning real distances
 const DIST_INTERVAL_MAX_MS = 5000     // when it keeps reporting "no echo"
 let distInterval = DIST_INTERVAL_MS
-const DIST_MAX_CM = 200          // matches the gauge's max in CFG
 let nextDistAt = 0
 let forceDistanceOnce = false   // v49: selector-triggered one-shot in ANY mode
 let nextLineAt = 0
@@ -2144,7 +2471,8 @@ basic.forever(function () {
             // Status. Same for whatever is currently on the glass.
             else if (uiInitialSyncStage == 7) sendUiValue("screen_mode",
                 screenMode == SCREEN_FACE ? "Face"
-                    : screenMode == SCREEN_AUTO ? "Auto" : "Status")
+                    : screenMode == SCREEN_AUTO ? "Auto"
+                    : screenMode == SCREEN_RADAR ? "Radar" : "Status")
             else if (uiInitialSyncStage == 8) sendUiValue("lbl_oled", oledCurrent())
             uiInitialSyncStage += 1
             if (uiInitialSyncStage > 8) uiInitialSyncStage = 0
