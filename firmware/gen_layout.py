@@ -128,6 +128,21 @@ auto = [
     at("mode", 1254, 820),
 ]
 
+# ── SCREEN ──────────────────────────────────────────────────────────────────
+# The OLED's controls, mirroring the rover's. Placed in the LEFT column under
+# LIGHTS & SOUND rather than beside SYSTEM: the right column is already three
+# zones deep, and the typed-message field wants width that only this side has.
+#
+# screen_mode's options are the firmware's SCREEN_* constants in order, and the
+# firmware pushes the value back whenever button A changes it on the robot, so
+# the selector and the button can never disagree.
+screen = [
+    new("screen_mode", "select", 80, 1180, 200, 92, label="Screen",
+        options="Status,Face,Auto"),
+    new("oled_text", "editfield", 320, 1180, 320, 92, label="Message"),
+    new("lbl_oled", "label", 680, 1180, 240, 92, label="On screen"),
+]
+
 # ── SYSTEM ──────────────────────────────────────────────────────────────────
 system = [
     at("lbl_ver",       1060, 1020),
@@ -141,6 +156,7 @@ ZONES = [
     ("grp_light", "LIGHTS & SOUND", "#c084fc", lights),
     ("grp_dist",  "DISTANCE",       "#ffb020", dist),
     ("grp_auto",  "AUTONOMY",       "#00e676", auto),
+    ("grp_scr",   "SCREEN",         "#38bdf8", screen),
     ("grp_sys",   "SYSTEM",         "#8892b0", system),
 ]
 
@@ -229,6 +245,11 @@ b64 = base64.b64encode(mini.encode()).decode()
 n, on = -(-len(b64) // 18), -(-len(OLD_B64) // 18)
 print(f"  base64 {len(OLD_B64)} -> {len(b64)} B   chunks {on} -> {n}   "
       f"load ~{on*0.035:.1f}s -> ~{n*0.035:.1f}s")
-json.dump(cfg, open(f"{HERE}/layout_maqueen.json", "w"), indent=1, ensure_ascii=False)
-open(f"{HERE}/layout_b64.txt", "w", newline="\n").write("\n".join(textwrap.wrap(b64, 100)) + "\n")
+# encoding pinned on both handles: the jog buttons carry an emoji icon, and
+# Python on Windows defaults these to cp1252, which cannot encode it. The run
+# then dies AFTER printing a green PASS, which reads as success right up until
+# the missing file is noticed.
+json.dump(cfg, open(f"{HERE}/layout_maqueen.json", "w", encoding="utf-8"),
+          indent=1, ensure_ascii=False)
+open(f"{HERE}/layout_b64.txt", "w", encoding="utf-8", newline="\n").write("\n".join(textwrap.wrap(b64, 100)) + "\n")
 print("  wrote layout_maqueen.json + layout_b64.txt")

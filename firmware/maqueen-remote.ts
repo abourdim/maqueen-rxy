@@ -146,23 +146,43 @@
  *    splash reports whether both ACKed, so a mis-wired screen or a dead
  *    driver is visible before anything else is debugged.
  *
- * 🖥️ SCREEN MODES — button A on the micro:bit cycles them:
+ * 🖥️ SCREEN MODES — the Screen selector in the app, or button A on the
+ *    micro:bit, which cycles the same three. Either drives it and both stay
+ *    in step: A pushes its new value back to the app, and a fresh connect
+ *    reports the mode the robot is really in rather than assuming Status.
  *    Status  text: link, drive mode, speed, motors, distance, line sensors
  *    Face    two eyes drawn from a framebuffer, with moods
  *    Auto    Status until the app connects, then Face
+ *
+ *    The app's Message field types onto the glass: while it is set it owns
+ *    the top two rows and the status keeps the rest, and clearing it hands
+ *    those rows back.
  *
  *    FACE MOODS, in the order they outrank each other:
  *      happy    logo touched (V2)      a deliberate request beats every mood
  *                                      the robot works out for itself
  *      alarm    picked up or tipped    small pupils, eyes down
+ *      startle  obstacle just arrived  small pupils, eyes up and wide, 550ms
  *      dizzy    just spun on the spot  pupils rolling, 2s
  *      worried  something close ahead  brows down, driven by the sonar
  *      asleep   20s with no command    eyes shut
  *      open     otherwise: blinks, and one blink in four is a wink
  *
- *    Awake, the pupils follow whichever line sensor is over the line. The
- *    rover's eyes follow its sweep head; this robot has no head, and the line
- *    beneath it is the one thing it is actually looking at.
+ *    startle fires on the CROSSING into obstacle range, not on the condition:
+ *    watching the flag itself would leave the robot staring wide-eyed for as
+ *    long as it sat near a wall, which is a stare rather than a fright.
+ *
+ *    WHERE THE EYES LOOK. Driving, they follow the D-pad, diagonals included,
+ *    and setting off after a rest earns one blink. Parked, they follow
+ *    whichever line sensor is over the line: the rover's eyes follow its
+ *    sweep head, and this robot has no head, so the line beneath it is the
+ *    one thing it is actually looking at.
+ *
+ *    A face frame is 1024 bytes on the bus the motors use, so v58 froze the
+ *    face outright while the wheels turned. v59 does not have to: a glance
+ *    changes only when a button does, and an unchanged frame is dropped, so
+ *    holding a direction costs exactly one frame. The 180ms ration in
+ *    faceRender is a floor under a mashed D-pad, not a frame rate.
  *
  * 🚀 HOW TO USE:
  *    1. Copy this entire file's contents
@@ -215,7 +235,7 @@
 // Bump this on every real change and check it (serial log + LED scroll
 // at boot) to confirm what's actually flashed before debugging further —
 // no more guessing whether a fix was really re-flashed.
-const FIRMWARE_VERSION = "v58"
+const FIRMWARE_VERSION = "v59"
 
 // Debug helper — logs ONLY if debugEnabled is true (default false).
 // THIS IS THE ROOT CAUSE of "connected, but nothing happens": pxt-
@@ -411,7 +431,7 @@ function cfgRevisionFromCfg(text: string): string {
     return "d" + (hash >>> 0)
 }
 
-const CFG = "eyJ0aXRsZSI6Ik1hcXVlZW4gUmVtb3RlIiwid2lkZ2V0cyI6W3siaWQiOiJncnBfZHJpdmUiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IkRSSVZFIiwiY29sb3IiOiIjMDBkNGZmIiwieCI6NTYsInkiOjQyLCJ3Ijo5MzcsImgiOjY4MiwiY2hpbGRyZW4iOiJkcGFkX21vdmUsc3BkLGJ0bl9zdG9wLGdhdWdlX3NwZCxidG5fbWwsYnRuX21yIn0seyJpZCI6ImdycF9oZWFkIiwidCI6Imdyb3VwIiwibGFiZWwiOiJIRUFEIiwiY29sb3IiOiIjZmY5NTAwIiwieCI6NTYsInkiOjc2MiwidyI6NjYxLCJoIjoyODUsImNoaWxkcmVuIjoic2xpZGVyX3NydjEsZ2F1Z2Vfc3J2MSxzbGlkZXJfc3J2MixnYXVnZV9zcnYyIn0seyJpZCI6ImdycF9saWdodCIsInQiOiJncm91cCIsImxhYmVsIjoiTElHSFRTICYgU09VTkQiLCJjb2xvciI6IiNjMDg0ZmMiLCJ4Ijo3MzYsInkiOjc2MiwidyI6MjYyLCJoIjozNDgsImNoaWxkcmVuIjoidG9nZ2xlX2xlZF9sLHRvZ2dsZV9sZWRfcixidG5fYnV6eiJ9LHsiaWQiOiJncnBfZGlzdCIsInQiOiJncm91cCIsImxhYmVsIjoiRElTVEFOQ0UiLCJjb2xvciI6IiNmZmIwMjAiLCJ4IjoxMDM2LCJ5Ijo0MiwidyI6NTI5LCJoIjo2ODAsImNoaWxkcmVuIjoiZ2F1Z2VfZGlzdCxhbGVydCxkaXN0X3JlYWQsZ3JhcGhfZGlzdCJ9LHsiaWQiOiJncnBfYXV0byIsInQiOiJncm91cCIsImxhYmVsIjoiQVVUT05PTVkiLCJjb2xvciI6IiMwMGU2NzYiLCJ4IjoxMDM2LCJ5Ijo3NTIsInciOjQyMSwiaCI6MTg3LCJjaGlsZHJlbiI6ImxuX2wsbG5fcixtb2RlIn0seyJpZCI6ImdycF9zeXMiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IlNZU1RFTSIsImNvbG9yIjoiIzg4OTJiMCIsIngiOjEwMzYsInkiOjk2MiwidyI6NDE1LCJoIjoyNzYsImNoaWxkcmVuIjoibGJsX3ZlcixsYmxfaGVhcnRiZWF0LHVwZCJ9LHsiaWQiOiJzZXBfY29scyIsInQiOiJzZXBhcmF0b3IiLCJ4IjoxMDEyLCJ5IjoxMDAsInciOjgsImgiOjY4MH0seyJpZCI6InNlcF9sZWZ0IiwidCI6InNlcGFyYXRvciIsIngiOjgwLCJ5Ijo3NDUsInciOjg5MCwiaCI6OH0seyJpZCI6InNlcF9ydDEiLCJ0Ijoic2VwYXJhdG9yIiwieCI6MTA2MCwieSI6NzMwLCJ3Ijo0OTAsImgiOjh9LHsiaWQiOiJzZXBfcnQyIiwidCI6InNlcGFyYXRvciIsIngiOjEwNjAsInkiOjk0NiwidyI6NDkwLCJoIjo4fSx7ImlkIjoiZHBhZF9tb3ZlIiwidCI6ImRwYWQiLCJ4Ijo4MCwieSI6MTAwLCJ3Ijo0NDksImgiOjQ1NiwibGFiZWwiOiJEcml2ZSIsIm1vZGVsIjoiY2xhc3NpYyJ9LHsiaWQiOiJzcGQiLCJ0Ijoic2xpZGVyIiwieCI6NTYwLCJ5IjoxMDAsInciOjE0OCwiaCI6MjYyLCJsYWJlbCI6IlNwZWVkIiwibWluIjo2MCwibWF4IjoyNTUsInN0ZXAiOjUsInZhbHVlIjoyMDB9LHsiaWQiOiJidG5fc3RvcCIsInQiOiJidXR0b24iLCJ4Ijo3NDAsInkiOjEwMCwidyI6MTA3LCJoIjoxMTUsImxhYmVsIjoiU1RPUCJ9LHsiaWQiOiJnYXVnZV9zcGQiLCJ0IjoiZ2F1Z2UiLCJ4Ijo3NDAsInkiOjI1MCwidyI6MjI5LCJoIjoyNTIsImxhYmVsIjoiU3BlZWQiLCJtaW4iOjYwLCJtYXgiOjI1NSwidW5pdHMiOiIiLCJkZWNpbWFscyI6MCwibW9kZWwiOiJtaW4iLCJzb3VyY2UiOiJzcGQiLCJ2YWx1ZSI6MjAwfSx7ImlkIjoiYnRuX21sIiwidCI6ImJ1dHRvbiIsIngiOjgwLCJ5Ijo1ODAsInciOjIwMCwiaCI6MTIwLCJsYWJlbCI6IkxlZnQgbW90b3IiLCJpY29uIjoi4pqZ77iPIiwic3BpbiI6LTEsImNvbG9yIjoiIzBlNzQ5MCJ9LHsiaWQiOiJidG5fbXIiLCJ0IjoiYnV0dG9uIiwieCI6MzAwLCJ5Ijo1ODAsInciOjIwMCwiaCI6MTIwLCJsYWJlbCI6IlJpZ2h0IG1vdG9yIiwiaWNvbiI6IuKame+4jyIsInNwaW4iOjEsImNvbG9yIjoiIzBlNzQ5MCJ9LHsiaWQiOiJzbGlkZXJfc3J2MSIsInQiOiJzbGlkZXIiLCJ4Ijo4MCwieSI6ODIwLCJ3Ijo5OSwiaCI6MjAzLCJsYWJlbCI6IlNlcnZvIDEiLCJtaW4iOjAsIm1heCI6MTgwLCJzdGVwIjoxLCJ2YWx1ZSI6OTB9LHsiaWQiOiJnYXVnZV9zcnYxIiwidCI6ImdhdWdlIiwieCI6MjAwLCJ5Ijo4MjAsInciOjE2NCwiaCI6MTg1LCJsYWJlbCI6IlNlcnZvIDEiLCJtaW4iOjAsIm1heCI6MTgwLCJ1bml0cyI6IsKwIiwiZGVjaW1hbHMiOjAsIm1vZGVsIjoibWluIiwic291cmNlIjoic2xpZGVyX3NydjEiLCJ2YWx1ZSI6OTB9LHsiaWQiOiJzbGlkZXJfc3J2MiIsInQiOiJzbGlkZXIiLCJ4Ijo0MDAsInkiOjgyMCwidyI6OTksImgiOjIwMSwibGFiZWwiOiJTZXJ2byAyIiwibWluIjowLCJtYXgiOjE4MCwic3RlcCI6MSwidmFsdWUiOjkwfSx7ImlkIjoiZ2F1Z2Vfc3J2MiIsInQiOiJnYXVnZSIsIngiOjUyMCwieSI6ODIwLCJ3IjoxNzMsImgiOjE4MSwibGFiZWwiOiJTZXJ2byAyIiwibWluIjowLCJtYXgiOjE4MCwidW5pdHMiOiLCsCIsImRlY2ltYWxzIjowLCJtb2RlbCI6Im1pbiIsInNvdXJjZSI6InNsaWRlcl9zcnYyIiwidmFsdWUiOjkwfSx7ImlkIjoidG9nZ2xlX2xlZF9sIiwidCI6InRvZ2dsZSIsIngiOjc2MCwieSI6ODIwLCJ3Ijo5NywiaCI6MTIxLCJsYWJlbCI6IkxFRCBMIn0seyJpZCI6InRvZ2dsZV9sZWRfciIsInQiOiJ0b2dnbGUiLCJ4Ijo4NzcsInkiOjgyMCwidyI6OTcsImgiOjEyMSwibGFiZWwiOiJMRUQgUiJ9LHsiaWQiOiJidG5fYnV6eiIsInQiOiJidXR0b24iLCJ4Ijo3NjAsInkiOjk2NSwidyI6MTA4LCJoIjoxMjEsImxhYmVsIjoiQnV6eiJ9LHsiaWQiOiJnYXVnZV9kaXN0IiwidCI6ImdhdWdlIiwieCI6MTA2MCwieSI6MTAwLCJ3IjoyNjQsImgiOjE4NywibGFiZWwiOiJEaXN0YW5jZSIsIm1pbiI6MCwibWF4IjoyMDAsInVuaXRzIjoiY20iLCJkZWNpbWFscyI6MCwibW9kZWwiOiJjbGFzc2ljIn0seyJpZCI6ImFsZXJ0IiwidCI6Im5vdGlmaWNhdGlvbiIsIngiOjEzNTAsInkiOjEwMCwidyI6OTAsImgiOjE4NiwibGFiZWwiOiJBbGVydCJ9LHsiaWQiOiJkaXN0X3JlYWQiLCJ0Ijoic2VsZWN0IiwieCI6MTA2MCwieSI6MzIwLCJ3IjoxOTQsImgiOjYyLCJsYWJlbCI6IkRpc3RhbmNlIHJlYWQiLCJvcHRpb25zIjoiQXV0byxSZWFkIG5vdyJ9LHsiaWQiOiJncmFwaF9kaXN0IiwidCI6ImdyYXBoIiwieCI6MTA2MCwieSI6NDAwLCJ3Ijo0ODEsImgiOjI5OCwibGFiZWwiOiJEaXN0YW5jZSBjbSIsIm1vZGVsIjoiZ3JpZCIsIndpbmRvd1NlYyI6MzAsInNlcmllcyI6MX0seyJpZCI6ImxuX2wiLCJ0IjoibGVkIiwieCI6MTA2MCwieSI6ODEwLCJ3Ijo3NiwiaCI6MTA1LCJsYWJlbCI6IkxpbmUgTCIsIm1vZGVsIjoiZG90IiwiY29sb3JPbiI6IiM0YWRlODAifSx7ImlkIjoibG5fciIsInQiOiJsZWQiLCJ4IjoxMTU2LCJ5Ijo4MTAsInciOjc4LCJoIjoxMDUsImxhYmVsIjoiTGluZSBSIiwibW9kZWwiOiJkb3QiLCJjb2xvck9uIjoiIzRhZGU4MCJ9LHsiaWQiOiJtb2RlIiwidCI6InNlbGVjdCIsIngiOjEyNTQsInkiOjgyMCwidyI6MTc5LCJoIjo5MiwibGFiZWwiOiJNb2RlIiwib3B0aW9ucyI6Ik1hbnVhbCxMaW5lLEF2b2lkIn0seyJpZCI6ImxibF92ZXIiLCJ0IjoibGFiZWwiLCJ4IjoxMDYwLCJ5IjoxMDIwLCJ3IjoxMDksImgiOjc5LCJsYWJlbCI6IkZpcm13YXJlIn0seyJpZCI6ImxibF9oZWFydGJlYXQiLCJ0IjoibGFiZWwiLCJ4IjoxMTkwLCJ5IjoxMDIwLCJ3IjoyMzcsImgiOjc2LCJsYWJlbCI6IlVwdGltZSJ9LHsiaWQiOiJ1cGQiLCJ0Ijoic2VsZWN0IiwieCI6MTA2MCwieSI6MTEyMCwidyI6MTgyLCJoIjo5NCwibGFiZWwiOiJUZWxlbWV0cnkiLCJvcHRpb25zIjoiQWxsLEJhc2ljLE9mZiJ9XSwiY2FudmFzIjp7InciOjE2MjEsImgiOjEyOTR9fQ=="
+const CFG = "eyJ0aXRsZSI6Ik1hcXVlZW4gUmVtb3RlIiwid2lkZ2V0cyI6W3siaWQiOiJncnBfZHJpdmUiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IkRSSVZFIiwiY29sb3IiOiIjMDBkNGZmIiwieCI6NTYsInkiOjQyLCJ3Ijo5MzcsImgiOjY4MiwiY2hpbGRyZW4iOiJkcGFkX21vdmUsc3BkLGJ0bl9zdG9wLGdhdWdlX3NwZCxidG5fbWwsYnRuX21yIn0seyJpZCI6ImdycF9oZWFkIiwidCI6Imdyb3VwIiwibGFiZWwiOiJIRUFEIiwiY29sb3IiOiIjZmY5NTAwIiwieCI6NTYsInkiOjc2MiwidyI6NjYxLCJoIjoyODUsImNoaWxkcmVuIjoic2xpZGVyX3NydjEsZ2F1Z2Vfc3J2MSxzbGlkZXJfc3J2MixnYXVnZV9zcnYyIn0seyJpZCI6ImdycF9saWdodCIsInQiOiJncm91cCIsImxhYmVsIjoiTElHSFRTICYgU09VTkQiLCJjb2xvciI6IiNjMDg0ZmMiLCJ4Ijo3MzYsInkiOjc2MiwidyI6MjYyLCJoIjozNDgsImNoaWxkcmVuIjoidG9nZ2xlX2xlZF9sLHRvZ2dsZV9sZWRfcixidG5fYnV6eiJ9LHsiaWQiOiJncnBfZGlzdCIsInQiOiJncm91cCIsImxhYmVsIjoiRElTVEFOQ0UiLCJjb2xvciI6IiNmZmIwMjAiLCJ4IjoxMDM2LCJ5Ijo0MiwidyI6NTI5LCJoIjo2ODAsImNoaWxkcmVuIjoiZ2F1Z2VfZGlzdCxhbGVydCxkaXN0X3JlYWQsZ3JhcGhfZGlzdCJ9LHsiaWQiOiJncnBfYXV0byIsInQiOiJncm91cCIsImxhYmVsIjoiQVVUT05PTVkiLCJjb2xvciI6IiMwMGU2NzYiLCJ4IjoxMDM2LCJ5Ijo3NTIsInciOjQyMSwiaCI6MTg3LCJjaGlsZHJlbiI6ImxuX2wsbG5fcixtb2RlIn0seyJpZCI6ImdycF9zY3IiLCJ0IjoiZ3JvdXAiLCJsYWJlbCI6IlNDUkVFTiIsImNvbG9yIjoiIzM4YmRmOCIsIngiOjU2LCJ5IjoxMTIyLCJ3Ijo4ODgsImgiOjE3NCwiY2hpbGRyZW4iOiJzY3JlZW5fbW9kZSxvbGVkX3RleHQsbGJsX29sZWQifSx7ImlkIjoiZ3JwX3N5cyIsInQiOiJncm91cCIsImxhYmVsIjoiU1lTVEVNIiwiY29sb3IiOiIjODg5MmIwIiwieCI6MTAzNiwieSI6OTYyLCJ3Ijo0MTUsImgiOjI3NiwiY2hpbGRyZW4iOiJsYmxfdmVyLGxibF9oZWFydGJlYXQsdXBkIn0seyJpZCI6InNlcF9jb2xzIiwidCI6InNlcGFyYXRvciIsIngiOjEwMTIsInkiOjEwMCwidyI6OCwiaCI6NjgwfSx7ImlkIjoic2VwX2xlZnQiLCJ0Ijoic2VwYXJhdG9yIiwieCI6ODAsInkiOjc0NSwidyI6ODkwLCJoIjo4fSx7ImlkIjoic2VwX3J0MSIsInQiOiJzZXBhcmF0b3IiLCJ4IjoxMDYwLCJ5Ijo3MzAsInciOjQ5MCwiaCI6OH0seyJpZCI6InNlcF9ydDIiLCJ0Ijoic2VwYXJhdG9yIiwieCI6MTA2MCwieSI6OTQ2LCJ3Ijo0OTAsImgiOjh9LHsiaWQiOiJkcGFkX21vdmUiLCJ0IjoiZHBhZCIsIngiOjgwLCJ5IjoxMDAsInciOjQ0OSwiaCI6NDU2LCJsYWJlbCI6IkRyaXZlIiwibW9kZWwiOiJjbGFzc2ljIn0seyJpZCI6InNwZCIsInQiOiJzbGlkZXIiLCJ4Ijo1NjAsInkiOjEwMCwidyI6MTQ4LCJoIjoyNjIsImxhYmVsIjoiU3BlZWQiLCJtaW4iOjYwLCJtYXgiOjI1NSwic3RlcCI6NSwidmFsdWUiOjIwMH0seyJpZCI6ImJ0bl9zdG9wIiwidCI6ImJ1dHRvbiIsIngiOjc0MCwieSI6MTAwLCJ3IjoxMDcsImgiOjExNSwibGFiZWwiOiJTVE9QIn0seyJpZCI6ImdhdWdlX3NwZCIsInQiOiJnYXVnZSIsIngiOjc0MCwieSI6MjUwLCJ3IjoyMjksImgiOjI1MiwibGFiZWwiOiJTcGVlZCIsIm1pbiI6NjAsIm1heCI6MjU1LCJ1bml0cyI6IiIsImRlY2ltYWxzIjowLCJtb2RlbCI6Im1pbiIsInNvdXJjZSI6InNwZCIsInZhbHVlIjoyMDB9LHsiaWQiOiJidG5fbWwiLCJ0IjoiYnV0dG9uIiwieCI6ODAsInkiOjU4MCwidyI6MjAwLCJoIjoxMjAsImxhYmVsIjoiTGVmdCBtb3RvciIsImljb24iOiLimpnvuI8iLCJzcGluIjotMSwiY29sb3IiOiIjMGU3NDkwIn0seyJpZCI6ImJ0bl9tciIsInQiOiJidXR0b24iLCJ4IjozMDAsInkiOjU4MCwidyI6MjAwLCJoIjoxMjAsImxhYmVsIjoiUmlnaHQgbW90b3IiLCJpY29uIjoi4pqZ77iPIiwic3BpbiI6MSwiY29sb3IiOiIjMGU3NDkwIn0seyJpZCI6InNsaWRlcl9zcnYxIiwidCI6InNsaWRlciIsIngiOjgwLCJ5Ijo4MjAsInciOjk5LCJoIjoyMDMsImxhYmVsIjoiU2Vydm8gMSIsIm1pbiI6MCwibWF4IjoxODAsInN0ZXAiOjEsInZhbHVlIjo5MH0seyJpZCI6ImdhdWdlX3NydjEiLCJ0IjoiZ2F1Z2UiLCJ4IjoyMDAsInkiOjgyMCwidyI6MTY0LCJoIjoxODUsImxhYmVsIjoiU2Vydm8gMSIsIm1pbiI6MCwibWF4IjoxODAsInVuaXRzIjoiwrAiLCJkZWNpbWFscyI6MCwibW9kZWwiOiJtaW4iLCJzb3VyY2UiOiJzbGlkZXJfc3J2MSIsInZhbHVlIjo5MH0seyJpZCI6InNsaWRlcl9zcnYyIiwidCI6InNsaWRlciIsIngiOjQwMCwieSI6ODIwLCJ3Ijo5OSwiaCI6MjAxLCJsYWJlbCI6IlNlcnZvIDIiLCJtaW4iOjAsIm1heCI6MTgwLCJzdGVwIjoxLCJ2YWx1ZSI6OTB9LHsiaWQiOiJnYXVnZV9zcnYyIiwidCI6ImdhdWdlIiwieCI6NTIwLCJ5Ijo4MjAsInciOjE3MywiaCI6MTgxLCJsYWJlbCI6IlNlcnZvIDIiLCJtaW4iOjAsIm1heCI6MTgwLCJ1bml0cyI6IsKwIiwiZGVjaW1hbHMiOjAsIm1vZGVsIjoibWluIiwic291cmNlIjoic2xpZGVyX3NydjIiLCJ2YWx1ZSI6OTB9LHsiaWQiOiJ0b2dnbGVfbGVkX2wiLCJ0IjoidG9nZ2xlIiwieCI6NzYwLCJ5Ijo4MjAsInciOjk3LCJoIjoxMjEsImxhYmVsIjoiTEVEIEwifSx7ImlkIjoidG9nZ2xlX2xlZF9yIiwidCI6InRvZ2dsZSIsIngiOjg3NywieSI6ODIwLCJ3Ijo5NywiaCI6MTIxLCJsYWJlbCI6IkxFRCBSIn0seyJpZCI6ImJ0bl9idXp6IiwidCI6ImJ1dHRvbiIsIngiOjc2MCwieSI6OTY1LCJ3IjoxMDgsImgiOjEyMSwibGFiZWwiOiJCdXp6In0seyJpZCI6ImdhdWdlX2Rpc3QiLCJ0IjoiZ2F1Z2UiLCJ4IjoxMDYwLCJ5IjoxMDAsInciOjI2NCwiaCI6MTg3LCJsYWJlbCI6IkRpc3RhbmNlIiwibWluIjowLCJtYXgiOjIwMCwidW5pdHMiOiJjbSIsImRlY2ltYWxzIjowLCJtb2RlbCI6ImNsYXNzaWMifSx7ImlkIjoiYWxlcnQiLCJ0Ijoibm90aWZpY2F0aW9uIiwieCI6MTM1MCwieSI6MTAwLCJ3Ijo5MCwiaCI6MTg2LCJsYWJlbCI6IkFsZXJ0In0seyJpZCI6ImRpc3RfcmVhZCIsInQiOiJzZWxlY3QiLCJ4IjoxMDYwLCJ5IjozMjAsInciOjE5NCwiaCI6NjIsImxhYmVsIjoiRGlzdGFuY2UgcmVhZCIsIm9wdGlvbnMiOiJBdXRvLFJlYWQgbm93In0seyJpZCI6ImdyYXBoX2Rpc3QiLCJ0IjoiZ3JhcGgiLCJ4IjoxMDYwLCJ5Ijo0MDAsInciOjQ4MSwiaCI6Mjk4LCJsYWJlbCI6IkRpc3RhbmNlIGNtIiwibW9kZWwiOiJncmlkIiwid2luZG93U2VjIjozMCwic2VyaWVzIjoxfSx7ImlkIjoibG5fbCIsInQiOiJsZWQiLCJ4IjoxMDYwLCJ5Ijo4MTAsInciOjc2LCJoIjoxMDUsImxhYmVsIjoiTGluZSBMIiwibW9kZWwiOiJkb3QiLCJjb2xvck9uIjoiIzRhZGU4MCJ9LHsiaWQiOiJsbl9yIiwidCI6ImxlZCIsIngiOjExNTYsInkiOjgxMCwidyI6NzgsImgiOjEwNSwibGFiZWwiOiJMaW5lIFIiLCJtb2RlbCI6ImRvdCIsImNvbG9yT24iOiIjNGFkZTgwIn0seyJpZCI6Im1vZGUiLCJ0Ijoic2VsZWN0IiwieCI6MTI1NCwieSI6ODIwLCJ3IjoxNzksImgiOjkyLCJsYWJlbCI6Ik1vZGUiLCJvcHRpb25zIjoiTWFudWFsLExpbmUsQXZvaWQifSx7ImlkIjoic2NyZWVuX21vZGUiLCJ0Ijoic2VsZWN0IiwieCI6ODAsInkiOjExODAsInciOjIwMCwiaCI6OTIsImxhYmVsIjoiU2NyZWVuIiwib3B0aW9ucyI6IlN0YXR1cyxGYWNlLEF1dG8ifSx7ImlkIjoib2xlZF90ZXh0IiwidCI6ImVkaXRmaWVsZCIsIngiOjMyMCwieSI6MTE4MCwidyI6MzIwLCJoIjo5MiwibGFiZWwiOiJNZXNzYWdlIn0seyJpZCI6ImxibF9vbGVkIiwidCI6ImxhYmVsIiwieCI6NjgwLCJ5IjoxMTgwLCJ3IjoyNDAsImgiOjkyLCJsYWJlbCI6Ik9uIHNjcmVlbiJ9LHsiaWQiOiJsYmxfdmVyIiwidCI6ImxhYmVsIiwieCI6MTA2MCwieSI6MTAyMCwidyI6MTA5LCJoIjo3OSwibGFiZWwiOiJGaXJtd2FyZSJ9LHsiaWQiOiJsYmxfaGVhcnRiZWF0IiwidCI6ImxhYmVsIiwieCI6MTE5MCwieSI6MTAyMCwidyI6MjM3LCJoIjo3NiwibGFiZWwiOiJVcHRpbWUifSx7ImlkIjoidXBkIiwidCI6InNlbGVjdCIsIngiOjEwNjAsInkiOjExMjAsInciOjE4MiwiaCI6OTQsImxhYmVsIjoiVGVsZW1ldHJ5Iiwib3B0aW9ucyI6IkFsbCxCYXNpYyxPZmYifV0sImNhbnZhcyI6eyJ3IjoxNjIxLCJoIjoxMzUyfX0="
 // v52: computed from CFG itself at boot.
 let CFG_REV = cfgRevisionFromCfg(CFG)
 
@@ -887,6 +907,558 @@ function driveAuto(nx: number, ny: number) {
     lastDriveCmdAt = now
     requestDriveDebug(l, r)
 }
+// ═══════════════════════════════════════════════════════════════
+// 🖥️ OLED 128x64 (SSD1306, I2C 0x3C)
+// ═══════════════════════════════════════════════════════════════
+// Extension: https://github.com/tinkertanker/pxt-oled-ssd1306  (namespace OLED)
+//
+// WHY 128x64 AND NOT 128x32. That library hardcodes the two registers which
+// tell an SSD1306 how many rows it has, for a 64-row panel. Give it a 32-row
+// panel and it initialises to something unreadable until 0xA8/0x1F and
+// 0xDA/0x02 are poked in by hand over raw I2C afterwards — dfrobot-rover
+// carries exactly that workaround. At 64 rows the library's own defaults are
+// already correct, so there is nothing to correct here.
+//
+// THE BUS IS THE CONSTRAINT, NOT THE SCREEN. The Maqueen's motor driver is
+// itself on I2C, and this firmware already records (see the servo slider
+// handler) that unthrottled writes can lock that bus hard enough to freeze
+// the whole runtime, heartbeat included. A repaint is roughly ten I2C
+// transactions per character, so a full 8x21 screen is on the order of 1700
+// of them. Three rules keep the screen from ever becoming that third talker
+// at the wrong moment:
+//
+//   1. NEVER FROM THE BLE RECEIVE PATH. Rendering happens in the forever
+//      loop only, exactly like the LED matrix — see "DISPLAY FIRST, RADIO
+//      LAST" there. The v43 D-pad hot path stays free of display work.
+//   2. NEVER WHILE THE WHEELS TURN. A screen a second behind while driving
+//      costs nothing; a motor write stuck behind 1700 transactions does.
+//   3. NEVER WHEN NOTHING CHANGED. Which puts a real constraint on what may
+//      appear here: anything that ticks on its own forces a repaint at its
+//      own rate. That is why the uptime below is shown in MINUTES and the
+//      distance is quantised to 5 cm — a seconds clock would repaint the
+//      whole panel once a second, forever, for no information anyone needs
+//      on the robot itself. Parked and connected, this screen should be
+//      redrawing essentially never.
+const OLED_ADDR = 0x3C
+const MAQUEEN_I2C_ADDR = 0x10    // the motor driver, checked by the splash
+const OLED_COLS = 21             // characters across at the default font
+const OLED_ROWS = 8              // 64 rows / 8-pixel font
+// How often we may LOOK, not how often we draw. Building the strings and
+// comparing them costs no I2C at all, so this can be brisk; only an actual
+// change reaches the bus. It has to be brisk, too — a blink is 140ms shut,
+// and at 250ms most blinks would open and close unseen between two checks.
+// The rover runs the same 120.
+const OLED_REFRESH_MS = 120
+const OLED_SPLASH_MS = 2500
+
+// A missing panel must cost nothing at all. Without this every refresh would
+// spend its transactions writing into the void, on the bus the motors need.
+let oledOk = false
+let oledSplashUntil = 0
+let oledCheckAt = 0
+let oledOnGlass: string[] = []
+let oledLineL = 0
+let oledLineR = 0
+// The distance poll below keeps its reading here; nothing else retains one.
+let lastDistShown = -1
+// A message typed in the app. While it is set it owns the top of the status
+// screen; clearing the field gives the status rows back.
+let oledText = ""
+// What the app was last told is on the glass, so lbl_oled is only pushed when
+// it actually changes rather than on every tick.
+let oledLastReported = "\u0000"
+
+// Zero-length write: the address either ACKs or it does not. Cheaper and
+// more honest than writing a byte somewhere and hoping it was harmless.
+function i2cPresent(addr: number): boolean {
+    const b = pins.createBuffer(1)
+    b[0] = 0x00
+    return pins.i2cWriteBuffer(addr, b, false) == 0
+}
+
+function oledPad(s: string, w: number): string {
+    while (s.length < w) s = s + " "
+    return s
+}
+
+// Right-aligned, so 99 -> 100 does not shove the rest of the line sideways.
+function oledNum(n: number, w: number): string {
+    let s = "" + n
+    while (s.length < w) s = " " + s
+    return s
+}
+
+function oledSigned(n: number): string {
+    return n > 0 ? "+" + n : "" + n
+}
+
+function oledInit() {
+    oledOk = i2cPresent(OLED_ADDR)
+    if (!oledOk) {
+        dbg("oled: nothing ACKed at 0x3C, screen disabled")
+        return
+    }
+    OLED.init(128, 64)
+    OLED.clear()
+    oledOnGlass = []
+    for (let i = 0; i < OLED_ROWS; i++) oledOnGlass.push("")
+}
+
+// Shown for a couple of seconds at power-up, before anything connects. It
+// answers the two questions a bench test actually starts with: is the screen
+// wired, and did the motor driver ACK? A robot that boots to a blank panel is
+// indistinguishable from one with a dead battery.
+function oledSplash() {
+    if (!oledOk) return
+    const driver = i2cPresent(MAQUEEN_I2C_ADDR) ? "ok" : "MISSING"
+    OLED.clear()
+    OLED.writeStringNewLine("Workshop-DIY.org")
+    OLED.writeStringNewLine("")
+    OLED.writeStringNewLine("Maqueen      " + FIRMWARE_VERSION)
+    OLED.writeStringNewLine("")
+    OLED.writeStringNewLine("Screen 0x3C  ok")
+    OLED.writeStringNewLine("Driver 0x10  " + driver)
+    dbg("selftest: screen=ok driver=" + driver)
+    oledSplashUntil = input.runningTime() + OLED_SPLASH_MS
+    // Whatever the screen shows next must repaint over this.
+    for (let i = 0; i < OLED_ROWS; i++) oledOnGlass[i] = ""
+}
+
+// The eight lines, built fresh and compared before anything is drawn.
+function oledLines(): string[] {
+    const out: string[] = []
+    if (oledText.length > 0) {
+        // A typed message owns the top rows; the status keeps the rest. Two
+        // rows, so 42 characters arrive whole rather than being cut at 21.
+        out.push(oledText.substr(0, OLED_COLS))
+        out.push(oledText.length > OLED_COLS
+            ? oledText.substr(OLED_COLS, OLED_COLS) : "")
+    } else {
+        out.push("Workshop-DIY.org")
+        out.push(oledPad("Maqueen", 13) + FIRMWARE_VERSION)
+    }
+    // Minutes, not seconds — see rule 3 above.
+    out.push("BLE   " + (btConnected
+        ? "up " + Math.idiv(heartbeat, 60) + "m"
+        : "offline"))
+    out.push("Mode  " + (driveMode == MODE_LINE ? "Line"
+        : driveMode == MODE_AVOID ? "Avoid" : "Manual"))
+    out.push("Speed " + oledNum(driveSpeed, 3))
+    out.push("Motor L" + oledPad(oledSigned(lastDriveL), 5) + "R" + oledSigned(lastDriveR))
+    // Quantised to 5 cm so sensor jitter alone cannot drive a repaint.
+    out.push("Dist  " + (lastDistShown < 0
+        ? "  --" : oledNum(Math.idiv(lastDistShown, 5) * 5, 4)) + " cm")
+    // A lit mark means "this side is over the line" — the inverted sense
+    // documented at lastLineL, so the screen agrees with the app's LEDs.
+    out.push("Line  L" + (oledLineL == 1 ? "*" : ".") + "  R" + (oledLineR == 1 ? "*" : "."))
+    return out
+}
+
+// ── RAW COMMAND CHANNEL ─────────────────────────────────────────────
+// The extension can draw text and nothing else worth having. Everything
+// below talks to the panel directly.
+function oledCmd(c: number) {
+    const b = pins.createBuffer(2)
+    b[0] = 0x00                  // "a command follows"
+    b[1] = c
+    pins.i2cWriteBuffer(OLED_ADDR, b)
+}
+
+// ── FRAMEBUFFER ─────────────────────────────────────────────────────
+// The face cannot be drawn with the OLED extension. drawFilledCircle() calls
+// drawLine() once per column, every drawLine() ends in drawShape(), and
+// drawShape() spends six command writes plus a data write for EACH
+// column-page it touches: one filled circle is several hundred I2C
+// transactions. So the face keeps its own framebuffer and pushes whole
+// frames — sixteen writes of 65 bytes for the entire screen, against ten
+// transactions per character on the text path.
+//
+// 1024 bytes at 64 rows, twice the rover's. That is nothing on a V2, and it
+// is allocated once at boot, never per frame.
+const FB_W = 128
+const FB_PAGES = 8
+const FB_SIZE = FB_W * FB_PAGES
+let fb: Buffer = null
+let fbTx: Buffer = null          // reused, so drawing a frame allocates nothing
+
+function fbInit() {
+    if (!oledOk) return
+    fb = pins.createBuffer(FB_SIZE)
+    fbTx = pins.createBuffer(65)
+    fbTx[0] = 0x40               // "data follows", once, for every chunk
+}
+
+// Bytes are VERTICAL: bit b of page p is row p*8+b. Filling by column-page
+// with a mask keeps this to at most 128x8 writes rather than one per pixel,
+// which matters because this runs in the MakeCode interpreter, not in C.
+function fbRect(x: number, y: number, w: number, h: number, on: boolean) {
+    const y0 = Math.max(0, y)
+    const y1 = Math.min(FB_PAGES * 8 - 1, y + h - 1)
+    const x0 = Math.max(0, x)
+    const x1 = Math.min(FB_W - 1, x + w - 1)
+    if (y1 < y0 || x1 < x0) return
+    for (let page = y0 >> 3; page <= (y1 >> 3); page++) {
+        const top = Math.max(y0, page * 8)
+        const bot = Math.min(y1, page * 8 + 7)
+        let mask = 0
+        for (let b = top; b <= bot; b++) mask = mask | (1 << (b & 7))
+        for (let px = x0; px <= x1; px++) {
+            const i = page * FB_W + px
+            fb[i] = on ? (fb[i] | mask) : (fb[i] & (~mask & 0xFF))
+        }
+    }
+}
+
+function fbFlush() {
+    oledCmd(0x21); oledCmd(0); oledCmd(FB_W - 1)        // column window
+    oledCmd(0x22); oledCmd(0); oledCmd(FB_PAGES - 1)    // page window
+    for (let off = 0; off < FB_SIZE; off += 64) {
+        for (let i = 0; i < 64; i++) fbTx[i + 1] = fb[off + i]
+        pins.i2cWriteBuffer(OLED_ADDR, fbTx, false)
+    }
+}
+
+// ── FACE ────────────────────────────────────────────────────────────
+// Scaled up from the rover's 128x32 geometry. Doubling the height alone is
+// not enough: at 64 rows the eyes have to grow sideways too, or they read as
+// two tall slots rather than eyes. Margins stay even at 10px either side.
+const EYE_W = 46, EYE_H = 44, EYE_Y = 10, EYE_LX = 10, EYE_RX = 72
+const PUP = 20
+const PUP_SMALL = 10
+const BROW = 18                  // how deep the worried wedge cuts
+const SMILE_Y = 29               // about two thirds down the eye
+const FACE_OPEN = 0, FACE_SHUT = 1, FACE_WORRIED = 2, FACE_DIZZY = 3
+const FACE_ALARM = 4             // picked up or tipped over
+const FACE_HAPPY = 5             // logo touched
+const FACE_STARTLE = 6           // something just appeared in front of it
+const HAPPY_MS = 2200
+// Shallow and thin, both settled by rendering it: a deeper or fatter arc
+// fills solid across its flat middle and stops reading as a smile at all —
+// it becomes a dome, which on a face is an eyebrow.
+const HAPPY_DEPTH = 7
+const HAPPY_THICK = 5
+const FACE_SLEEP_MS = 20000
+const FACE_BLINK_SHUT_MS = 140
+const FACE_DIZZY_MS = 2000
+// Obstacle startle. alertActive is the hysteretic "something is close" flag
+// the distance poll already maintains; what matters for a face is its EDGE.
+// Watching the flag itself would leave the robot staring wide-eyed for as long
+// as it sat near a wall, which is a stare, not a fright. Catching the crossing
+// makes it flinch once on approach and then settle into worried.
+const FACE_STARTLE_MS = 550
+let faceAlertSeen = false
+let faceStartleUntil = 0
+
+// A frame costs 1024 bytes on the bus the motors are using, so while the
+// wheels turn the face is rationed rather than free. 180ms is a floor under a
+// mashed D-pad, not a frame rate: faceSig already drops unchanged frames, so
+// holding a direction still costs exactly one.
+const FACE_DRIVE_MIN_MS = 180
+let faceDriveNextAt = 0
+// Blink on setting off, once per burst of driving -- the look of noticing
+// where you are about to go, rather than a twitch on every button.
+let faceWasDriving = false
+
+// How far the pupils travel when the robot looks at something. NOT free to
+// pick: the pupil is a hole punched in the eye, and past +/-9 horizontally
+// it reaches the 3px rounded border and opens the eye into a C. Rendering
+// the geometry is the only way this shows up — on hardware it just looks
+// like a drawing bug. Same reason the dizzy roll below stays inside +/-6
+// vertically rather than the 8 the arithmetic technically allows.
+const GAZE = 8
+// Vertical travel is tighter than horizontal: the pupil has less room above
+// and below it than to either side, and 6 keeps a rim at full stretch.
+const GAZE_Y = 6
+
+// Screen modes. There is no RADAR here, unlike the rover: a sonar map needs a
+// heading to plot each reading against, and this robot's ultrasonic is bolted
+// to the chassis facing forward. Sweeping it would mean sweeping the whole
+// robot, which is driving, not looking.
+const SCREEN_STATUS = 0
+const SCREEN_FACE = 1
+const SCREEN_AUTO = 2            // status until connected, then the face
+const SCREEN_MODES = 3
+let screenMode = SCREEN_STATUS
+
+let faceNextBlinkAt = 0
+let faceShutUntil = 0
+let faceDizzyUntil = 0
+let faceSpun = false
+let faceHappyUntil = 0
+// A quarter of blinks are winks. Same code path, one eye left open, and it
+// buys more character per line than anything else the face does.
+let faceWink = false
+let faceWinkLeft = true
+let faceSig = ""                 // last frame drawn, so a still face costs nothing
+
+// The only question worth answering before a link exists is WHICH micro:bit
+// this is — the browser's chooser lists these names and they all look alike,
+// so a robot showing eyes instead is withholding the one fact you need.
+function faceWanted(): boolean {
+    if (screenMode == SCREEN_FACE) return true
+    return screenMode == SCREEN_AUTO && btConnected
+}
+
+// cos 45 degrees. Comparing the gravity vector against its RESTING direction
+// beats comparing pitch and roll against zero, twice over: it needs no idea
+// which way the board is mounted, and it does not go unstable near vertical,
+// where roll stops meaning anything at all.
+const TILT_COS = 0.707
+
+// LEARNED at power-up, never assumed. This micro:bit lies FLAT in the
+// Maqueen's edge connector, where the rover's stands upright in a driver
+// board — which is exactly why the resting attitude is measured rather than
+// hardcoded. Get it wrong and the robot believes it is being held in the air
+// permanently, wears the alarmed face forever, and hides every other
+// expression behind it.
+let restX = 0
+let restY = 0
+let restZ = 0
+
+function attitudeCalibrate() {
+    // Four samples: the accelerometer is noisy and this baseline is compared
+    // against for the rest of the session.
+    restX = 0; restY = 0; restZ = 0
+    for (let i = 0; i < 4; i++) {
+        restX += input.acceleration(Dimension.X)
+        restY += input.acceleration(Dimension.Y)
+        restZ += input.acceleration(Dimension.Z)
+        basic.pause(20)
+    }
+    restX = Math.idiv(restX, 4)
+    restY = Math.idiv(restY, 4)
+    restZ = Math.idiv(restZ, 4)
+    dbg("attitude: x=" + restX + " y=" + restY + " z=" + restZ)
+}
+
+// The angle between where gravity points NOW and where it pointed at boot.
+function tilted(): boolean {
+    const x = input.acceleration(Dimension.X)
+    const y = input.acceleration(Dimension.Y)
+    const z = input.acceleration(Dimension.Z)
+    const magNow = Math.sqrt(x * x + y * y + z * z)
+    const magRest = Math.sqrt(restX * restX + restY * restY + restZ * restZ)
+    // In free fall, or before calibration, there is no direction to compare.
+    if (magNow < 200 || magRest < 200) return false
+    return (x * restX + y * restY + z * restZ) / (magNow * magRest) < TILT_COS
+}
+
+// cutRight says which side the brow wedge bites into: the OUTER edge of each
+// eye, so the two are mirror images rather than parallel.
+function drawEye(x: number, mode: number, dx: number, dy: number, cutRight: boolean) {
+    if (mode == FACE_HAPPY) {
+        // An arc with its middle riding UP, which is the shape a shut, smiling
+        // eye makes. Drawn as one short vertical run per column: a curve is
+        // the only thing on this screen that cannot be faked with rectangles,
+        // and at five pixels thick it still reads as a line rather than a blob.
+        for (let c = 0; c < EYE_W; c++) {
+            // t runs -100..100 across the eye; t*t/100 is the parabola.
+            const t = Math.idiv(c * 200, EYE_W - 1) - 100
+            const rise = Math.idiv(HAPPY_DEPTH * (10000 - t * t), 10000)
+            fbRect(x + c, EYE_Y + SMILE_Y - rise, 1, HAPPY_THICK, true)
+        }
+        return
+    }
+    if (mode == FACE_SHUT) {
+        // A bar, not a short rectangle: anything taller reads as a squint.
+        fbRect(x, EYE_Y + (EYE_H >> 1) - 3, EYE_W, 6, true)
+        return
+    }
+    const y = EYE_Y
+    // Rounded with two crossed rectangles. Cheaper than a circle, and the
+    // corners are the only part anyone notices at this size.
+    fbRect(x + 3, y, EYE_W - 6, EYE_H, true)
+    fbRect(x, y + 3, EYE_W, EYE_H - 6, true)
+    // The pupil is a HOLE punched in the white of the eye. It shrinks when
+    // the robot is lifted — a small pupil in a wide eye is what alarm looks
+    // like, and it costs nothing but a smaller rectangle.
+    // Small pupil, wide eye: the shape of both being lifted and being startled.
+    const pw = (mode == FACE_ALARM || mode == FACE_STARTLE) ? PUP_SMALL : PUP
+    fbRect(x + ((EYE_W - pw) >> 1) + dx, y + ((EYE_H - pw) >> 1) + dy,
+           pw, pw, false)
+    if (mode == FACE_WORRIED) {
+        // Brows, as a wedge cleared off the top: deepest at the OUTER edge so
+        // the inner ends ride UP. Cut them the other way and the same shape
+        // reads as angry instead of worried. Just shortening the eye, which is
+        // what this did first, only ever read as a squint.
+        for (let c = 0; c < EYE_W; c++) {
+            const t = cutRight ? c : (EYE_W - 1 - c)
+            const d = Math.idiv(t * BROW, EYE_W - 1)
+            if (d > 0) fbRect(x + c, y, 1, d, false)
+        }
+    }
+}
+
+function faceRender(now: number) {
+    // Frozen while the wheels turn. A frame is 1024 bytes on the same bus as
+    // the motor driver, inside the loop that feeds the drive watchdog — and
+    // nobody is watching the robot's eyes while it drives away from them.
+    const driving = lastDriveL != 0 || lastDriveR != 0
+    if (driving) {
+        if ((lastDriveL > 0 && lastDriveR < 0) || (lastDriveL < 0 && lastDriveR > 0)) {
+            faceSpun = true      // remember it, so the dizziness can land after
+        }
+        // v58 froze the face outright here. That was right for the rover,
+        // whose eyes track a head that sweeps CONTINUOUSLY -- every tick a new
+        // frame, forever, on the bus the servos need. A direction glance is
+        // the opposite: it changes only when a button does, and faceSig drops
+        // the frame when nothing changed. So the eyes may follow the driving
+        // after all; the ration below is just a floor under a mashed D-pad.
+        if (now < faceDriveNextAt) return
+        faceDriveNextAt = now + FACE_DRIVE_MIN_MS
+    }
+    if (!driving && faceSpun) {
+        faceSpun = false
+        faceDizzyUntil = now + FACE_DIZZY_MS
+    }
+    // Setting off after a rest gets one blink -- noticing where it is going.
+    if (driving && !faceWasDriving && now >= faceShutUntil) {
+        faceShutUntil = now + FACE_BLINK_SHUT_MS
+        faceWink = false
+    }
+    faceWasDriving = driving
+    // The flinch is the CROSSING, not the condition.
+    if (alertActive && !faceAlertSeen) faceStartleUntil = now + FACE_STARTLE_MS
+    faceAlertSeen = alertActive
+
+    let mode = FACE_OPEN
+    let dx = 0
+    let dy = 0
+    // Happy outranks even being picked up. Touching the logo is the only
+    // deliberate thing in this list — someone asked the robot for a face, and
+    // the tilt from lifting it to reach the logo must not answer instead.
+    if (now < faceHappyUntil) {
+        mode = FACE_HAPPY
+    } else if (tilted()) {
+        mode = FACE_ALARM
+        dy = 8                   // eyes down, at the floor going away
+        // Safe at 8 only because the alarmed pupil is PUP_SMALL, not PUP.
+    } else if (now < faceStartleUntil) {
+        // Outranks dizzy and worried: something arrived in front of the robot
+        // just now, and that is more urgent than how it feels about it.
+        mode = FACE_STARTLE
+        dy = -GAZE_Y             // eyes up and wide, away from the thing
+    } else if (now < faceDizzyUntil) {
+        mode = FACE_DIZZY
+        const phase = Math.idiv(now, 120) % 4
+        dx = phase == 0 ? -GAZE : (phase == 2 ? GAZE : 0)
+        dy = phase == 1 ? -6 : (phase == 3 ? 6 : 0)
+    } else if (lastDistShown >= 0 && lastDistShown < ALERT_CM) {
+        mode = FACE_WORRIED
+        dy = 3                   // pupils drop a little under the brows
+    } else if (now - lastDriveCmdAt > FACE_SLEEP_MS) {
+        mode = FACE_SHUT
+    } else if (now >= faceNextBlinkAt) {
+        faceShutUntil = now + FACE_BLINK_SHUT_MS
+        faceNextBlinkAt = now + 2500 + Math.randomRange(0, 3500)
+        faceWink = Math.randomRange(0, 3) == 0
+        faceWinkLeft = Math.randomRange(0, 1) == 0
+    }
+    if (mode == FACE_OPEN) {
+        if (now < faceShutUntil) mode = FACE_SHUT
+        else if (btnFwd || btnBack || btnLeft || btnRight) {
+            // Looking where it is going. Read from the button flags rather
+            // than the motor values, so a diagonal shows as a diagonal instead
+            // of arriving pre-mixed as two wheel speeds. The two axes are
+            // independent here exactly as they are in the drive mix, so
+            // up+right needs no case of its own.
+            if (btnLeft && !btnRight) dx = -GAZE
+            else if (btnRight && !btnLeft) dx = GAZE
+            if (btnFwd && !btnBack) dy = -GAZE_Y
+            else if (btnBack && !btnFwd) dy = GAZE_Y
+        }
+        // Parked, the eyes look at whichever line sensor is over the line. The
+        // rover follows its sweep head here; this robot has no head, and the
+        // line beneath it is the one thing it is actually looking at. Both
+        // sensors, or neither, means straight ahead.
+        else if (oledLineL == 1 && oledLineR == 0) dx = -GAZE
+        else if (oledLineR == 1 && oledLineL == 0) dx = GAZE
+    }
+
+    // A wink is a SHUT frame that draws one eye open, so it has to be part of
+    // the signature — otherwise it looks identical to a blink and the frame
+    // is skipped as unchanged.
+    const winking = mode == FACE_SHUT && faceWink
+    const sig = "" + mode + "," + dx + "," + dy + (winking ? (faceWinkLeft ? ",wl" : ",wr") : "")
+    if (sig == faceSig) return
+    faceSig = sig
+    fb.fill(0)
+    drawEye(EYE_LX, winking && !faceWinkLeft ? FACE_OPEN : mode, dx, dy, false)
+    drawEye(EYE_RX, winking && faceWinkLeft ? FACE_OPEN : mode, dx, dy, true)
+    const t0 = input.runningTime()
+    fbFlush()
+    dbg("face frame " + (input.runningTime() - t0) + "ms mode=" + mode)
+}
+
+// What the app should show as "On screen". The status text is many lines and
+// the face is not text at all, so this reports the one thing worth naming.
+function oledCurrent(): string {
+    if (faceWanted()) return "Face"
+    if (oledText.length > 0) return oledText.substr(0, OLED_COLS)
+    return "Status"
+}
+
+// Mode and glass state, pushed to the app. Called after anything that can
+// change either, so the selector on screen and the button on the robot can
+// never disagree about which is in force.
+function screenReport() {
+    const name = screenMode == SCREEN_FACE ? "Face"
+        : screenMode == SCREEN_AUTO ? "Auto" : "Status"
+    sendUiValue("screen_mode", name)
+    const cur = oledCurrent()
+    if (cur != oledLastReported) {
+        oledLastReported = cur
+        sendUiValue("lbl_oled", cur)
+    }
+}
+
+function oledRender() {
+    if (!oledOk) return
+    const now = input.runningTime()
+    if (now < oledSplashUntil) return          // the splash owns the glass
+    if (now < oledCheckAt) return
+    oledCheckAt = now + OLED_REFRESH_MS
+    // Rule 2. Parked is the only time this panel is worth any bus at all.
+    if (lastDriveL != 0 || lastDriveR != 0) return
+    // Read the patrol pins for the screen's own sake: the poll further down
+    // runs only in Line/Avoid, so in Manual those values would be stale or
+    // never set at all. readPatrol is a plain digital pin read, not I2C, so
+    // this costs nothing on the bus we are protecting. The face reads these
+    // too — they are what its eyes follow.
+    oledLineL = maqueen.readPatrol(maqueen.Patrol.PatrolLeft) == 0 ? 1 : 0
+    oledLineR = maqueen.readPatrol(maqueen.Patrol.PatrolRight) == 0 ? 1 : 0
+    if (faceWanted()) {
+        // Text must repaint when we come back, or half the old status would
+        // survive underneath the next frame.
+        for (let i = 0; i < OLED_ROWS; i++) oledOnGlass[i] = ""
+        faceRender(now)
+        return
+    }
+    faceSig = ""                 // and the face likewise, on the way back
+    const want = oledLines()
+    // Hard-clip rather than trust the builders above. One line over 21
+    // characters wraps onto the next row and shoves the whole panel down by
+    // one, which reads as a bug in whatever the last row was showing.
+    for (let i = 0; i < OLED_ROWS; i++) {
+        if (want[i].length > OLED_COLS) want[i] = want[i].substr(0, OLED_COLS)
+    }
+    let changed = false
+    for (let i = 0; i < OLED_ROWS; i++) {
+        if (want[i] != oledOnGlass[i]) changed = true
+    }
+    if (!changed) return                       // rule 3, the important one
+    // Measured, not assumed: this is the number that decides whether the
+    // interval above is affordable. Turn debug on to read it.
+    const t0 = now
+    OLED.clear()
+    for (let i = 0; i < OLED_ROWS; i++) {
+        OLED.writeStringNewLine(want[i])
+        oledOnGlass[i] = want[i]
+    }
+    dbg("oled repaint " + (input.runningTime() - t0) + "ms")
+}
+
+
 
 function handleWidget(id: string, val: string) {
     // Every SET command lands here first — logged unconditionally so
@@ -952,6 +1524,31 @@ function handleWidget(id: string, val: string) {
     if (id == "dist_read" && val == "Read now") {
         forceDistanceOnce = true
         dbg("distance: forced one-shot requested")
+    }
+
+    // Select: Screen — Status / Face / Auto. The same three the button on the
+    // robot cycles, so either can drive it and both stay in step.
+    if (id == "screen_mode") {
+        if (val == "Face") screenMode = SCREEN_FACE
+        else if (val == "Auto") screenMode = SCREEN_AUTO
+        else screenMode = SCREEN_STATUS
+        // Force whichever renderer comes next to repaint over the other one.
+        faceSig = ""
+        for (let i = 0; i < OLED_ROWS; i++) oledOnGlass[i] = ""
+        screenReport()
+        dbg("screen -> " + val)
+        return
+    }
+
+    // A message typed in the app, shown on the robot's own screen. Clearing
+    // the field hands the top rows back to the status text.
+    if (id == "oled_text") {
+        oledText = val
+        faceSig = ""
+        for (let i = 0; i < OLED_ROWS; i++) oledOnGlass[i] = ""
+        screenReport()
+        dbg("screen text -> " + oledCurrent())
+        return
     }
 
     // Select: Mode — Manual / Line / Avoid.
@@ -1075,464 +1672,6 @@ function sendValue(id: string, val: string) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 🖥️ OLED 128x64 (SSD1306, I2C 0x3C)
-// ═══════════════════════════════════════════════════════════════
-// Extension: https://github.com/tinkertanker/pxt-oled-ssd1306  (namespace OLED)
-//
-// WHY 128x64 AND NOT 128x32. That library hardcodes the two registers which
-// tell an SSD1306 how many rows it has, for a 64-row panel. Give it a 32-row
-// panel and it initialises to something unreadable until 0xA8/0x1F and
-// 0xDA/0x02 are poked in by hand over raw I2C afterwards — dfrobot-rover
-// carries exactly that workaround. At 64 rows the library's own defaults are
-// already correct, so there is nothing to correct here.
-//
-// THE BUS IS THE CONSTRAINT, NOT THE SCREEN. The Maqueen's motor driver is
-// itself on I2C, and this firmware already records (see the servo slider
-// handler) that unthrottled writes can lock that bus hard enough to freeze
-// the whole runtime, heartbeat included. A repaint is roughly ten I2C
-// transactions per character, so a full 8x21 screen is on the order of 1700
-// of them. Three rules keep the screen from ever becoming that third talker
-// at the wrong moment:
-//
-//   1. NEVER FROM THE BLE RECEIVE PATH. Rendering happens in the forever
-//      loop only, exactly like the LED matrix — see "DISPLAY FIRST, RADIO
-//      LAST" there. The v43 D-pad hot path stays free of display work.
-//   2. NEVER WHILE THE WHEELS TURN. A screen a second behind while driving
-//      costs nothing; a motor write stuck behind 1700 transactions does.
-//   3. NEVER WHEN NOTHING CHANGED. Which puts a real constraint on what may
-//      appear here: anything that ticks on its own forces a repaint at its
-//      own rate. That is why the uptime below is shown in MINUTES and the
-//      distance is quantised to 5 cm — a seconds clock would repaint the
-//      whole panel once a second, forever, for no information anyone needs
-//      on the robot itself. Parked and connected, this screen should be
-//      redrawing essentially never.
-const OLED_ADDR = 0x3C
-const MAQUEEN_I2C_ADDR = 0x10    // the motor driver, checked by the splash
-const OLED_COLS = 21             // characters across at the default font
-const OLED_ROWS = 8              // 64 rows / 8-pixel font
-// How often we may LOOK, not how often we draw. Building the strings and
-// comparing them costs no I2C at all, so this can be brisk; only an actual
-// change reaches the bus. It has to be brisk, too — a blink is 140ms shut,
-// and at 250ms most blinks would open and close unseen between two checks.
-// The rover runs the same 120.
-const OLED_REFRESH_MS = 120
-const OLED_SPLASH_MS = 2500
-
-// A missing panel must cost nothing at all. Without this every refresh would
-// spend its transactions writing into the void, on the bus the motors need.
-let oledOk = false
-let oledSplashUntil = 0
-let oledCheckAt = 0
-let oledOnGlass: string[] = []
-let oledLineL = 0
-let oledLineR = 0
-// The distance poll below keeps its reading here; nothing else retains one.
-let lastDistShown = -1
-
-// Zero-length write: the address either ACKs or it does not. Cheaper and
-// more honest than writing a byte somewhere and hoping it was harmless.
-function i2cPresent(addr: number): boolean {
-    const b = pins.createBuffer(1)
-    b[0] = 0x00
-    return pins.i2cWriteBuffer(addr, b, false) == 0
-}
-
-function oledPad(s: string, w: number): string {
-    while (s.length < w) s = s + " "
-    return s
-}
-
-// Right-aligned, so 99 -> 100 does not shove the rest of the line sideways.
-function oledNum(n: number, w: number): string {
-    let s = "" + n
-    while (s.length < w) s = " " + s
-    return s
-}
-
-function oledSigned(n: number): string {
-    return n > 0 ? "+" + n : "" + n
-}
-
-function oledInit() {
-    oledOk = i2cPresent(OLED_ADDR)
-    if (!oledOk) {
-        dbg("oled: nothing ACKed at 0x3C, screen disabled")
-        return
-    }
-    OLED.init(128, 64)
-    OLED.clear()
-    oledOnGlass = []
-    for (let i = 0; i < OLED_ROWS; i++) oledOnGlass.push("")
-}
-
-// Shown for a couple of seconds at power-up, before anything connects. It
-// answers the two questions a bench test actually starts with: is the screen
-// wired, and did the motor driver ACK? A robot that boots to a blank panel is
-// indistinguishable from one with a dead battery.
-function oledSplash() {
-    if (!oledOk) return
-    const driver = i2cPresent(MAQUEEN_I2C_ADDR) ? "ok" : "MISSING"
-    OLED.clear()
-    OLED.writeStringNewLine("Workshop-DIY.org")
-    OLED.writeStringNewLine("")
-    OLED.writeStringNewLine("Maqueen      " + FIRMWARE_VERSION)
-    OLED.writeStringNewLine("")
-    OLED.writeStringNewLine("Screen 0x3C  ok")
-    OLED.writeStringNewLine("Driver 0x10  " + driver)
-    dbg("selftest: screen=ok driver=" + driver)
-    oledSplashUntil = input.runningTime() + OLED_SPLASH_MS
-    // Whatever the screen shows next must repaint over this.
-    for (let i = 0; i < OLED_ROWS; i++) oledOnGlass[i] = ""
-}
-
-// The eight lines, built fresh and compared before anything is drawn.
-function oledLines(): string[] {
-    const out: string[] = []
-    out.push("Workshop-DIY.org")
-    out.push(oledPad("Maqueen", 13) + FIRMWARE_VERSION)
-    // Minutes, not seconds — see rule 3 above.
-    out.push("BLE   " + (btConnected
-        ? "up " + Math.idiv(heartbeat, 60) + "m"
-        : "offline"))
-    out.push("Mode  " + (driveMode == MODE_LINE ? "Line"
-        : driveMode == MODE_AVOID ? "Avoid" : "Manual"))
-    out.push("Speed " + oledNum(driveSpeed, 3))
-    out.push("Motor L" + oledPad(oledSigned(lastDriveL), 5) + "R" + oledSigned(lastDriveR))
-    // Quantised to 5 cm so sensor jitter alone cannot drive a repaint.
-    out.push("Dist  " + (lastDistShown < 0
-        ? "  --" : oledNum(Math.idiv(lastDistShown, 5) * 5, 4)) + " cm")
-    // A lit mark means "this side is over the line" — the inverted sense
-    // documented at lastLineL, so the screen agrees with the app's LEDs.
-    out.push("Line  L" + (oledLineL == 1 ? "*" : ".") + "  R" + (oledLineR == 1 ? "*" : "."))
-    return out
-}
-
-// ── RAW COMMAND CHANNEL ─────────────────────────────────────────────
-// The extension can draw text and nothing else worth having. Everything
-// below talks to the panel directly.
-function oledCmd(c: number) {
-    const b = pins.createBuffer(2)
-    b[0] = 0x00                  // "a command follows"
-    b[1] = c
-    pins.i2cWriteBuffer(OLED_ADDR, b)
-}
-
-// ── FRAMEBUFFER ─────────────────────────────────────────────────────
-// The face cannot be drawn with the OLED extension. drawFilledCircle() calls
-// drawLine() once per column, every drawLine() ends in drawShape(), and
-// drawShape() spends six command writes plus a data write for EACH
-// column-page it touches: one filled circle is several hundred I2C
-// transactions. So the face keeps its own framebuffer and pushes whole
-// frames — sixteen writes of 65 bytes for the entire screen, against ten
-// transactions per character on the text path.
-//
-// 1024 bytes at 64 rows, twice the rover's. That is nothing on a V2, and it
-// is allocated once at boot, never per frame.
-const FB_W = 128
-const FB_PAGES = 8
-const FB_SIZE = FB_W * FB_PAGES
-let fb: Buffer = null
-let fbTx: Buffer = null          // reused, so drawing a frame allocates nothing
-
-function fbInit() {
-    if (!oledOk) return
-    fb = pins.createBuffer(FB_SIZE)
-    fbTx = pins.createBuffer(65)
-    fbTx[0] = 0x40               // "data follows", once, for every chunk
-}
-
-// Bytes are VERTICAL: bit b of page p is row p*8+b. Filling by column-page
-// with a mask keeps this to at most 128x8 writes rather than one per pixel,
-// which matters because this runs in the MakeCode interpreter, not in C.
-function fbRect(x: number, y: number, w: number, h: number, on: boolean) {
-    const y0 = Math.max(0, y)
-    const y1 = Math.min(FB_PAGES * 8 - 1, y + h - 1)
-    const x0 = Math.max(0, x)
-    const x1 = Math.min(FB_W - 1, x + w - 1)
-    if (y1 < y0 || x1 < x0) return
-    for (let page = y0 >> 3; page <= (y1 >> 3); page++) {
-        const top = Math.max(y0, page * 8)
-        const bot = Math.min(y1, page * 8 + 7)
-        let mask = 0
-        for (let b = top; b <= bot; b++) mask = mask | (1 << (b & 7))
-        for (let px = x0; px <= x1; px++) {
-            const i = page * FB_W + px
-            fb[i] = on ? (fb[i] | mask) : (fb[i] & (~mask & 0xFF))
-        }
-    }
-}
-
-function fbFlush() {
-    oledCmd(0x21); oledCmd(0); oledCmd(FB_W - 1)        // column window
-    oledCmd(0x22); oledCmd(0); oledCmd(FB_PAGES - 1)    // page window
-    for (let off = 0; off < FB_SIZE; off += 64) {
-        for (let i = 0; i < 64; i++) fbTx[i + 1] = fb[off + i]
-        pins.i2cWriteBuffer(OLED_ADDR, fbTx, false)
-    }
-}
-
-// ── FACE ────────────────────────────────────────────────────────────
-// Scaled up from the rover's 128x32 geometry. Doubling the height alone is
-// not enough: at 64 rows the eyes have to grow sideways too, or they read as
-// two tall slots rather than eyes. Margins stay even at 10px either side.
-const EYE_W = 46, EYE_H = 44, EYE_Y = 10, EYE_LX = 10, EYE_RX = 72
-const PUP = 20
-const PUP_SMALL = 10
-const BROW = 18                  // how deep the worried wedge cuts
-const SMILE_Y = 29               // about two thirds down the eye
-const FACE_OPEN = 0, FACE_SHUT = 1, FACE_WORRIED = 2, FACE_DIZZY = 3
-const FACE_ALARM = 4             // picked up or tipped over
-const FACE_HAPPY = 5             // logo touched
-const HAPPY_MS = 2200
-// Shallow and thin, both settled by rendering it: a deeper or fatter arc
-// fills solid across its flat middle and stops reading as a smile at all —
-// it becomes a dome, which on a face is an eyebrow.
-const HAPPY_DEPTH = 7
-const HAPPY_THICK = 5
-const FACE_SLEEP_MS = 20000
-const FACE_BLINK_SHUT_MS = 140
-const FACE_DIZZY_MS = 2000
-// How far the pupils travel when the robot looks at something. NOT free to
-// pick: the pupil is a hole punched in the eye, and past +/-9 horizontally
-// it reaches the 3px rounded border and opens the eye into a C. Rendering
-// the geometry is the only way this shows up — on hardware it just looks
-// like a drawing bug. Same reason the dizzy roll below stays inside +/-6
-// vertically rather than the 8 the arithmetic technically allows.
-const GAZE = 8
-
-// Screen modes. There is no RADAR here, unlike the rover: a sonar map needs a
-// heading to plot each reading against, and this robot's ultrasonic is bolted
-// to the chassis facing forward. Sweeping it would mean sweeping the whole
-// robot, which is driving, not looking.
-const SCREEN_STATUS = 0
-const SCREEN_FACE = 1
-const SCREEN_AUTO = 2            // status until connected, then the face
-const SCREEN_MODES = 3
-let screenMode = SCREEN_STATUS
-
-let faceNextBlinkAt = 0
-let faceShutUntil = 0
-let faceDizzyUntil = 0
-let faceSpun = false
-let faceHappyUntil = 0
-// A quarter of blinks are winks. Same code path, one eye left open, and it
-// buys more character per line than anything else the face does.
-let faceWink = false
-let faceWinkLeft = true
-let faceSig = ""                 // last frame drawn, so a still face costs nothing
-
-// The only question worth answering before a link exists is WHICH micro:bit
-// this is — the browser's chooser lists these names and they all look alike,
-// so a robot showing eyes instead is withholding the one fact you need.
-function faceWanted(): boolean {
-    if (screenMode == SCREEN_FACE) return true
-    return screenMode == SCREEN_AUTO && btConnected
-}
-
-// cos 45 degrees. Comparing the gravity vector against its RESTING direction
-// beats comparing pitch and roll against zero, twice over: it needs no idea
-// which way the board is mounted, and it does not go unstable near vertical,
-// where roll stops meaning anything at all.
-const TILT_COS = 0.707
-
-// LEARNED at power-up, never assumed. This micro:bit lies FLAT in the
-// Maqueen's edge connector, where the rover's stands upright in a driver
-// board — which is exactly why the resting attitude is measured rather than
-// hardcoded. Get it wrong and the robot believes it is being held in the air
-// permanently, wears the alarmed face forever, and hides every other
-// expression behind it.
-let restX = 0
-let restY = 0
-let restZ = 0
-
-function attitudeCalibrate() {
-    // Four samples: the accelerometer is noisy and this baseline is compared
-    // against for the rest of the session.
-    restX = 0; restY = 0; restZ = 0
-    for (let i = 0; i < 4; i++) {
-        restX += input.acceleration(Dimension.X)
-        restY += input.acceleration(Dimension.Y)
-        restZ += input.acceleration(Dimension.Z)
-        basic.pause(20)
-    }
-    restX = Math.idiv(restX, 4)
-    restY = Math.idiv(restY, 4)
-    restZ = Math.idiv(restZ, 4)
-    dbg("attitude: x=" + restX + " y=" + restY + " z=" + restZ)
-}
-
-// The angle between where gravity points NOW and where it pointed at boot.
-function tilted(): boolean {
-    const x = input.acceleration(Dimension.X)
-    const y = input.acceleration(Dimension.Y)
-    const z = input.acceleration(Dimension.Z)
-    const magNow = Math.sqrt(x * x + y * y + z * z)
-    const magRest = Math.sqrt(restX * restX + restY * restY + restZ * restZ)
-    // In free fall, or before calibration, there is no direction to compare.
-    if (magNow < 200 || magRest < 200) return false
-    return (x * restX + y * restY + z * restZ) / (magNow * magRest) < TILT_COS
-}
-
-// cutRight says which side the brow wedge bites into: the OUTER edge of each
-// eye, so the two are mirror images rather than parallel.
-function drawEye(x: number, mode: number, dx: number, dy: number, cutRight: boolean) {
-    if (mode == FACE_HAPPY) {
-        // An arc with its middle riding UP, which is the shape a shut, smiling
-        // eye makes. Drawn as one short vertical run per column: a curve is
-        // the only thing on this screen that cannot be faked with rectangles,
-        // and at five pixels thick it still reads as a line rather than a blob.
-        for (let c = 0; c < EYE_W; c++) {
-            // t runs -100..100 across the eye; t*t/100 is the parabola.
-            const t = Math.idiv(c * 200, EYE_W - 1) - 100
-            const rise = Math.idiv(HAPPY_DEPTH * (10000 - t * t), 10000)
-            fbRect(x + c, EYE_Y + SMILE_Y - rise, 1, HAPPY_THICK, true)
-        }
-        return
-    }
-    if (mode == FACE_SHUT) {
-        // A bar, not a short rectangle: anything taller reads as a squint.
-        fbRect(x, EYE_Y + (EYE_H >> 1) - 3, EYE_W, 6, true)
-        return
-    }
-    const y = EYE_Y
-    // Rounded with two crossed rectangles. Cheaper than a circle, and the
-    // corners are the only part anyone notices at this size.
-    fbRect(x + 3, y, EYE_W - 6, EYE_H, true)
-    fbRect(x, y + 3, EYE_W, EYE_H - 6, true)
-    // The pupil is a HOLE punched in the white of the eye. It shrinks when
-    // the robot is lifted — a small pupil in a wide eye is what alarm looks
-    // like, and it costs nothing but a smaller rectangle.
-    const pw = mode == FACE_ALARM ? PUP_SMALL : PUP
-    fbRect(x + ((EYE_W - pw) >> 1) + dx, y + ((EYE_H - pw) >> 1) + dy,
-           pw, pw, false)
-    if (mode == FACE_WORRIED) {
-        // Brows, as a wedge cleared off the top: deepest at the OUTER edge so
-        // the inner ends ride UP. Cut them the other way and the same shape
-        // reads as angry instead of worried. Just shortening the eye, which is
-        // what this did first, only ever read as a squint.
-        for (let c = 0; c < EYE_W; c++) {
-            const t = cutRight ? c : (EYE_W - 1 - c)
-            const d = Math.idiv(t * BROW, EYE_W - 1)
-            if (d > 0) fbRect(x + c, y, 1, d, false)
-        }
-    }
-}
-
-function faceRender(now: number) {
-    // Frozen while the wheels turn. A frame is 1024 bytes on the same bus as
-    // the motor driver, inside the loop that feeds the drive watchdog — and
-    // nobody is watching the robot's eyes while it drives away from them.
-    if (lastDriveL != 0 || lastDriveR != 0) {
-        if ((lastDriveL > 0 && lastDriveR < 0) || (lastDriveL < 0 && lastDriveR > 0)) {
-            faceSpun = true      // remember it, so the dizziness can land after
-        }
-        return
-    }
-    if (faceSpun) {
-        faceSpun = false
-        faceDizzyUntil = now + FACE_DIZZY_MS
-    }
-
-    let mode = FACE_OPEN
-    let dx = 0
-    let dy = 0
-    // Happy outranks even being picked up. Touching the logo is the only
-    // deliberate thing in this list — someone asked the robot for a face, and
-    // the tilt from lifting it to reach the logo must not answer instead.
-    if (now < faceHappyUntil) {
-        mode = FACE_HAPPY
-    } else if (tilted()) {
-        mode = FACE_ALARM
-        dy = 8                   // eyes down, at the floor going away
-        // Safe at 8 only because the alarmed pupil is PUP_SMALL, not PUP.
-    } else if (now < faceDizzyUntil) {
-        mode = FACE_DIZZY
-        const phase = Math.idiv(now, 120) % 4
-        dx = phase == 0 ? -GAZE : (phase == 2 ? GAZE : 0)
-        dy = phase == 1 ? -6 : (phase == 3 ? 6 : 0)
-    } else if (lastDistShown >= 0 && lastDistShown < ALERT_CM) {
-        mode = FACE_WORRIED
-        dy = 3                   // pupils drop a little under the brows
-    } else if (now - lastDriveCmdAt > FACE_SLEEP_MS) {
-        mode = FACE_SHUT
-    } else if (now >= faceNextBlinkAt) {
-        faceShutUntil = now + FACE_BLINK_SHUT_MS
-        faceNextBlinkAt = now + 2500 + Math.randomRange(0, 3500)
-        faceWink = Math.randomRange(0, 3) == 0
-        faceWinkLeft = Math.randomRange(0, 1) == 0
-    }
-    if (mode == FACE_OPEN) {
-        if (now < faceShutUntil) mode = FACE_SHUT
-        // Awake, the eyes look at whichever line sensor is over the line. The
-        // rover follows its sweep head here; this robot has no head, and the
-        // line beneath it is the one thing it is actually looking at. Both
-        // sensors, or neither, means straight ahead.
-        else if (oledLineL == 1 && oledLineR == 0) dx = -GAZE
-        else if (oledLineR == 1 && oledLineL == 0) dx = GAZE
-    }
-
-    // A wink is a SHUT frame that draws one eye open, so it has to be part of
-    // the signature — otherwise it looks identical to a blink and the frame
-    // is skipped as unchanged.
-    const winking = mode == FACE_SHUT && faceWink
-    const sig = "" + mode + "," + dx + "," + dy + (winking ? (faceWinkLeft ? ",wl" : ",wr") : "")
-    if (sig == faceSig) return
-    faceSig = sig
-    fb.fill(0)
-    drawEye(EYE_LX, winking && !faceWinkLeft ? FACE_OPEN : mode, dx, dy, false)
-    drawEye(EYE_RX, winking && faceWinkLeft ? FACE_OPEN : mode, dx, dy, true)
-    const t0 = input.runningTime()
-    fbFlush()
-    dbg("face frame " + (input.runningTime() - t0) + "ms mode=" + mode)
-}
-
-function oledRender() {
-    if (!oledOk) return
-    const now = input.runningTime()
-    if (now < oledSplashUntil) return          // the splash owns the glass
-    if (now < oledCheckAt) return
-    oledCheckAt = now + OLED_REFRESH_MS
-    // Rule 2. Parked is the only time this panel is worth any bus at all.
-    if (lastDriveL != 0 || lastDriveR != 0) return
-    // Read the patrol pins for the screen's own sake: the poll further down
-    // runs only in Line/Avoid, so in Manual those values would be stale or
-    // never set at all. readPatrol is a plain digital pin read, not I2C, so
-    // this costs nothing on the bus we are protecting. The face reads these
-    // too — they are what its eyes follow.
-    oledLineL = maqueen.readPatrol(maqueen.Patrol.PatrolLeft) == 0 ? 1 : 0
-    oledLineR = maqueen.readPatrol(maqueen.Patrol.PatrolRight) == 0 ? 1 : 0
-    if (faceWanted()) {
-        // Text must repaint when we come back, or half the old status would
-        // survive underneath the next frame.
-        for (let i = 0; i < OLED_ROWS; i++) oledOnGlass[i] = ""
-        faceRender(now)
-        return
-    }
-    faceSig = ""                 // and the face likewise, on the way back
-    const want = oledLines()
-    // Hard-clip rather than trust the builders above. One line over 21
-    // characters wraps onto the next row and shoves the whole panel down by
-    // one, which reads as a bug in whatever the last row was showing.
-    for (let i = 0; i < OLED_ROWS; i++) {
-        if (want[i].length > OLED_COLS) want[i] = want[i].substr(0, OLED_COLS)
-    }
-    let changed = false
-    for (let i = 0; i < OLED_ROWS; i++) {
-        if (want[i] != oledOnGlass[i]) changed = true
-    }
-    if (!changed) return                       // rule 3, the important one
-    // Measured, not assumed: this is the number that decides whether the
-    // interval above is affordable. Turn debug on to read it.
-    const t0 = now
-    OLED.clear()
-    for (let i = 0; i < OLED_ROWS; i++) {
-        OLED.writeStringNewLine(want[i])
-        oledOnGlass[i] = want[i]
-    }
-    dbg("oled repaint " + (input.runningTime() - t0) + "ms")
-}
-
-// ═══════════════════════════════════════════════════════════════
 // 🚀 STARTUP
 // ═══════════════════════════════════════════════════════════════
 
@@ -1572,6 +1711,7 @@ input.onButtonPressed(Button.A, function () {
     // Force whichever renderer comes next to repaint over the other one.
     for (let i = 0; i < OLED_ROWS; i++) oledOnGlass[i] = ""
     faceSig = ""
+    screenReport()
     dbg("screen mode -> " + screenMode)
 })
 
@@ -1961,8 +2101,15 @@ basic.forever(function () {
             else if (uiInitialSyncStage == 4) sendUiValue("gauge_srv2", "" + uiServo2)
             else if (uiInitialSyncStage == 5) sendUiValue("spd", "" + driveSpeed)
             else if (uiInitialSyncStage == 6) sendUiValue("gauge_spd", "" + driveSpeed)
+            // The robot may already be in Face — button A works with no app
+            // attached — so the selector has to be told, not assumed to be
+            // Status. Same for whatever is currently on the glass.
+            else if (uiInitialSyncStage == 7) sendUiValue("screen_mode",
+                screenMode == SCREEN_FACE ? "Face"
+                    : screenMode == SCREEN_AUTO ? "Auto" : "Status")
+            else if (uiInitialSyncStage == 8) sendUiValue("lbl_oled", oledCurrent())
             uiInitialSyncStage += 1
-            if (uiInitialSyncStage > 6) uiInitialSyncStage = 0
+            if (uiInitialSyncStage > 8) uiInitialSyncStage = 0
             uiGaugeTxNextAt = now + UI_GAUGE_TX_GAP_MS
             uiSent = true
         } else if (now - uiGaugeLastInputAt >= UI_GAUGE_SETTLE_MS) {

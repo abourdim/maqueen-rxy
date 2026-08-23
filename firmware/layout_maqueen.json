@@ -57,6 +57,17 @@
    "children": "ln_l,ln_r,mode"
   },
   {
+   "id": "grp_scr",
+   "t": "group",
+   "label": "SCREEN",
+   "color": "#38bdf8",
+   "x": 56,
+   "y": 1122,
+   "w": 888,
+   "h": 174,
+   "children": "screen_mode,oled_text,lbl_oled"
+  },
+  {
    "id": "grp_sys",
    "t": "group",
    "label": "SYSTEM",
@@ -334,6 +345,34 @@
    "options": "Manual,Line,Avoid"
   },
   {
+   "id": "screen_mode",
+   "t": "select",
+   "x": 80,
+   "y": 1180,
+   "w": 200,
+   "h": 92,
+   "label": "Screen",
+   "options": "Status,Face,Auto"
+  },
+  {
+   "id": "oled_text",
+   "t": "editfield",
+   "x": 320,
+   "y": 1180,
+   "w": 320,
+   "h": 92,
+   "label": "Message"
+  },
+  {
+   "id": "lbl_oled",
+   "t": "label",
+   "x": 680,
+   "y": 1180,
+   "w": 240,
+   "h": 92,
+   "label": "On screen"
+  },
+  {
    "id": "lbl_ver",
    "t": "label",
    "x": 1060,
@@ -364,6 +403,6 @@
  ],
  "canvas": {
   "w": 1621,
-  "h": 1294
+  "h": 1352
  }
 }

@@ -1,3 +1,47 @@
+# Firmware v59 — the screen in the app, and eyes that react
+
+**A Screen zone in the panel**, mirroring the rover's: a `Status / Face / Auto`
+selector, a Message field that types onto the robot's glass, and a label
+reporting what is actually on it. The selector and button A stay in step in
+both directions — A pushes its value back, and a fresh connect reports the
+mode the robot is really in rather than assuming Status, since A works with no
+app attached.
+
+Generated through `firmware/gen_layout.py`, which checks its own geometry: 7
+zones, 37 widgets, no overlaps, the 21 carried-over widgets untouched. The
+layout grew 281 → 312 chunks, so **first connect costs about 1.1s more**
+(~10.9s). Only the first pays it; the revision cache answers after that.
+
+**Eyes that react.** The pupils follow the D-pad while driving, diagonals
+included, and setting off after a rest earns one blink — noticing where it is
+going, rather than a twitch on every button. A new **startle** mood fires when
+something first arrives in front of the robot: eyes wide, pupils small and up,
+550ms, outranking dizzy and worried before settling into worried. It fires on
+the crossing, not the condition; watching the flag itself would leave the robot
+staring wide-eyed for as long as it sat near a wall.
+
+This lifts v58's freeze-while-driving rule, which was inherited from the rover
+and does not apply here. The rover's eyes track a head that sweeps
+*continuously* — a new frame every tick, forever, on the bus the servos need.
+A direction glance changes only when a button does, and an unchanged frame is
+already dropped, so holding a direction costs exactly one frame. The 180ms
+ration is a floor under a mashed D-pad, not a frame rate.
+
+## Fixes
+
+`gen_layout.py` wrote its JSON through a handle opened with no encoding, so on
+Windows cp1252 choked on the jog buttons' emoji icon — *after* printing a green
+PASS, which reads as success until the missing file is noticed. Both output
+handles are now pinned to UTF-8.
+
+The OLED and face section moved above `handleWidget`. MakeCode's static
+TypeScript rejects forward *variable* references even from inside a function
+body — this file already records that, which is why `heartbeat` sits where it
+does — and the new widget handlers touch `screenMode`, `faceSig`, `oledOnGlass`
+and `screenReport`. `screenReport` also went from `sendValue` to `sendUiValue`:
+direct feedback to an explicit user action should not be gated by the Telemetry
+selector, the same reason the distance one-shot bypasses it.
+
 # Firmware v58 — a 128x64 OLED, ported from dfrobot-rover
 
 The Maqueen has a screen. **Button A** cycles three modes:
