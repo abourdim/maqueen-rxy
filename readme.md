@@ -134,6 +134,30 @@ Licence: MIT. Powered by [Workshop-DIY.org](https://workshop-diy.org).
 
 Everything below is the version history, newest first.
 
+# Firmware v65 — the pictures wait for a link
+
+Face, Auto and Radar now all wait for a connection, and Status holds the glass
+until then. This is the rover's rule and it was wrong here from v58 to v64:
+Face was allowed while disconnected, so choosing it hid the very thing the
+status screen exists to show.
+
+The reasoning is the rover's own. Before a link exists the only question worth
+answering is *which* micro:bit this is — the browser's chooser lists them all
+alike, so a robot showing eyes or a sweeping scope is withholding the one fact
+you need to pick it out of a classroom. v61 added the pairing name to the
+status screen precisely to answer that, and then let Face cover it up.
+
+Found by diffing this firmware's `faceWanted()` against the rover's rather than
+by anything going wrong, so it is worth saying plainly what is still
+*deliberately* different from the rover — all of it additive:
+
+- **startle** is a mood the rover does not have
+- **five face styles**; the rover has one
+- **a third range ring** at 10 cm, and a true semicircle rather than a scope
+  stretched sideways by two — both earned by 64 rows against the rover's 32
+- the pupils follow the **line sensors** when parked, where the rover's follow
+  its sweep head
+
 # Firmware v64 — a nudge wakes it
 
 The face shuts its eyes after twenty seconds, and until now only a drive

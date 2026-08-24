@@ -182,7 +182,9 @@
  *            -- and while DISCONNECTED, the pairing name, because the
  *            browser's chooser lists every board as "BBC micro:bit [xxxxx]"
  *            and picking your own out of a classroom is otherwise a guess
- *    Face    two eyes drawn from a framebuffer, with moods
+ *    Face    two eyes drawn from a framebuffer, with moods. Face, Auto and
+ *            Radar all wait for a connection: disconnected, the one thing
+ *            worth showing is the pairing name, which Status carries.
  *    Auto    Status until the app connects, then Face
  *    Radar   a sonar map -- REQUIRES THE ULTRASONIC ON SERVO 1. Left on the
  *            chassis every reading lands at the same heading and the scope
@@ -286,7 +288,7 @@
 // Bump this on every real change and check it (serial log + LED scroll
 // at boot) to confirm what's actually flashed before debugging further —
 // no more guessing whether a fix was really re-flashed.
-const FIRMWARE_VERSION = "v64"
+const FIRMWARE_VERSION = "v65"
 
 // Debug helper — logs ONLY if debugEnabled is true (default false).
 // THIS IS THE ROOT CAUSE of "connected, but nothing happens": pxt-
@@ -1544,10 +1546,15 @@ let faceSig = ""                 // last frame drawn, so a still face costs noth
 
 // The only question worth answering before a link exists is WHICH micro:bit
 // this is — the browser's chooser lists these names and they all look alike,
-// so a robot showing eyes instead is withholding the one fact you need.
+// so a robot showing eyes or a sweeping scope is withholding the one fact you
+// need to pick it out.
+//
+// BOTH pictures therefore wait for a connection, which is the rover's rule and
+// was wrong here from v58 to v64: Face was allowed while disconnected, so
+// choosing it hid the pairing name the status screen exists to show.
 function faceWanted(): boolean {
-    if (screenMode == SCREEN_FACE) return true
-    return screenMode == SCREEN_AUTO && btConnected
+    if (!btConnected) return false
+    return screenMode == SCREEN_FACE || screenMode == SCREEN_AUTO
 }
 
 // cos 45 degrees. Comparing the gravity vector against its RESTING direction
@@ -1851,7 +1858,7 @@ function oledRender() {
     // too — they are what its eyes follow.
     oledLineL = maqueen.readPatrol(maqueen.Patrol.PatrolLeft) == 0 ? 1 : 0
     oledLineR = maqueen.readPatrol(maqueen.Patrol.PatrolRight) == 0 ? 1 : 0
-    if (screenMode == SCREEN_RADAR && oledText.length == 0) {
+    if (screenMode == SCREEN_RADAR && btConnected && oledText.length == 0) {
         // Text and face must both repaint on the way back out.
         for (let i = 0; i < OLED_ROWS; i++) oledOnGlass[i] = ""
         faceSig = ""
