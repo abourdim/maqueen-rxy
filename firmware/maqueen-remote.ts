@@ -209,8 +209,15 @@
  *      startle  obstacle just arrived  small pupils, eyes up and wide, 550ms
  *      dizzy    just spun on the spot  pupils rolling, 2s
  *      worried  something close ahead  brows down, driven by the sonar
- *      asleep   20s with no command    eyes shut
+ *      asleep   20s idle, untouched    eyes shut
  *      open     otherwise: blinks, and one blink in four is a wink
+ *
+ *    "Idle, untouched" is both halves: no command AND nothing moving it. A
+ *    nudge wakes it just as a command does, so a robot on a shelf with no app
+ *    connected can still be woken. Movement is compared frame to frame rather
+ *    than against the resting attitude -- the question is whether something
+ *    moved it, not how it is being held, and being held is what alarm answers
+ *    one rank higher.
  *
  *    startle fires on the CROSSING into obstacle range, not on the condition:
  *    watching the flag itself would leave the robot staring wide-eyed for as
@@ -279,7 +286,7 @@
 // Bump this on every real change and check it (serial log + LED scroll
 // at boot) to confirm what's actually flashed before debugging further —
 // no more guessing whether a fix was really re-flashed.
-const FIRMWARE_VERSION = "v63"
+const FIRMWARE_VERSION = "v64"
 
 // Debug helper — logs ONLY if debugEnabled is true (default false).
 // THIS IS THE ROOT CAUSE of "connected, but nothing happens": pxt-
@@ -1559,6 +1566,38 @@ let restX = 0
 let restY = 0
 let restZ = 0
 
+// ── WAKING ON A NUDGE ───────────────────────────────────────────────
+// A robot that has sat still for twenty seconds shuts its eyes, and until v64
+// only a drive command opened them again -- so a robot on a shelf with no app
+// connected could never wake at all. Knocking the table should do it, the way
+// it would for anything else asleep.
+//
+// Compared FRAME TO FRAME rather than against the resting baseline, because
+// the question is movement, not attitude. Measured against rest, a robot
+// carried across a room and set down at a new angle would read as permanently
+// nudged; and being held is already tilted()'s job, one mood higher up.
+//
+// The threshold is in milli-g and sits well clear of the accelerometer's own
+// noise, which the calibration below has to average four samples to see past.
+// Too low and motor vibration, or a hand on the same table, keeps it awake for
+// ever; this wants a deliberate knock.
+const STIR_MG = 140
+let stirX = 0
+let stirY = 0
+let stirZ = 0
+let faceStirAt = 0
+
+function stirred(now: number) {
+    const x = input.acceleration(Dimension.X)
+    const y = input.acceleration(Dimension.Y)
+    const z = input.acceleration(Dimension.Z)
+    const dx = x - stirX, dy = y - stirY, dz = z - stirZ
+    stirX = x; stirY = y; stirZ = z
+    // Squares compared against a square: a real distance would mean a sqrt
+    // every frame to answer a yes/no question.
+    if (dx * dx + dy * dy + dz * dz > STIR_MG * STIR_MG) faceStirAt = now
+}
+
 function attitudeCalibrate() {
     // Four samples: the accelerometer is noisy and this baseline is compared
     // against for the rest of the session.
@@ -1572,6 +1611,10 @@ function attitudeCalibrate() {
     restX = Math.idiv(restX, 4)
     restY = Math.idiv(restY, 4)
     restZ = Math.idiv(restZ, 4)
+    // Seed the nudge detector from the same measurement. Left at zero it would
+    // read the very first frame as a shove of a full g and wake the robot at
+    // boot, every time.
+    stirX = restX; stirY = restY; stirZ = restZ
     dbg("attitude: x=" + restX + " y=" + restY + " z=" + restZ)
 }
 
@@ -1688,6 +1731,11 @@ function faceRender(now: number) {
         faceWink = false
     }
     faceWasDriving = driving
+    // Sampled whenever the face renders, asleep or not, because the reading is
+    // a difference: skipping frames would make the next one look like a shove.
+    // Coming back from Status or Radar does exactly that and wakes the eyes,
+    // which is the right answer for the wrong reason and worth no more code.
+    stirred(now)
     // The flinch is the CROSSING, not the condition.
     if (alertActive && !faceAlertSeen) faceStartleUntil = now + FACE_STARTLE_MS
     faceAlertSeen = alertActive
@@ -1717,7 +1765,10 @@ function faceRender(now: number) {
     } else if (lastDistShown >= 0 && lastDistShown < ALERT_CM) {
         mode = FACE_WORRIED
         dy = 3                   // pupils drop a little under the brows
-    } else if (now - lastDriveCmdAt > FACE_SLEEP_MS) {
+    } else if (now - lastDriveCmdAt > FACE_SLEEP_MS
+               && now - faceStirAt > FACE_SLEEP_MS) {
+        // Asleep only when BOTH have gone quiet: no command, and nothing has
+        // moved it. Either one is enough to wake it.
         mode = FACE_SHUT
     } else if (now >= faceNextBlinkAt) {
         faceShutUntil = now + FACE_BLINK_SHUT_MS

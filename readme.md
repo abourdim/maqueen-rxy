@@ -79,7 +79,7 @@ tells you nothing.
 Moods, in the order they outrank each other: **happy** (logo touched, V2),
 **alarm** (picked up or tipped), **startle** (something just arrived in front),
 **dizzy** (just spun on the spot), **worried** (something close ahead),
-**asleep** (20s idle), and otherwise **open** — blinking, where one blink in
+**asleep** (20s with no command *and* nothing moving it — a nudge wakes it as well as a command does), and otherwise **open** — blinking, where one blink in
 four is a wink. Driving, the pupils follow the D-pad; parked, they follow
 whichever line sensor is over the line.
 
@@ -133,6 +133,30 @@ Licence: MIT. Powered by [Workshop-DIY.org](https://workshop-diy.org).
 ---
 
 Everything below is the version history, newest first.
+
+# Firmware v64 — a nudge wakes it
+
+The face shuts its eyes after twenty seconds, and until now only a drive
+command opened them again — so a robot sitting on a shelf with no app connected
+could never wake at all. Knocking the table does it now, the way it would for
+anything else asleep.
+
+Movement is compared **frame to frame**, not against the resting attitude
+measured at boot. The question is whether something moved it, not how it is
+being held: measured against rest, a robot carried across a room and set down
+at a new angle would read as permanently nudged, and being held is already what
+the *alarm* mood answers, one rank higher.
+
+The threshold is 140 milli-g on the vector difference, well clear of the
+accelerometer's own noise — the boot calibration has to average four samples to
+see past that noise, which is the measure of it. Too low and motor vibration,
+or a hand resting on the same table, would keep the robot awake for ever; this
+wants a deliberate knock. It compares squares against a square, since a real
+distance would mean a square root every frame to answer a yes/no question.
+
+The detector is seeded from the boot calibration rather than left at zero,
+which would otherwise read the very first frame as a shove of a full g and wake
+the robot at every power-up.
 
 # Firmware v63 — faithful to the rover, and a proper README
 
